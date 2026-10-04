@@ -1,0 +1,23 @@
+{
+  "baseUrl": "https://codecraftapi.com/v1",
+  "model": "",
+  "planTokens": "auto",
+  "permissions": {
+    "write": "ask",
+    "shell": "ask",
+    "mcp": "ask"
+  },
+  "tokenGuard": {
+    "enabled": true,
+    "warnRequestTokens": 500000,
+    "hardRequestTokens": 1500000,
+    "maxReadChars": 80000,
+    "maxSearchChars": 30000,
+    "maxCommandChars": 40000
+  },
+  "agents": {
+    "enabled": true,
+    "maxParallel": 4,
+    "defaultBudgetTokens": 250000
+  }
+}

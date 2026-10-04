@@ -1,0 +1,48 @@
+{
+  "name": "craftcode-codecraft",
+  "version": "0.9.0",
+  "description": "CodeCraft-native terminal coding and research agent with a full-screen TUI, resumable sessions, subagents, skills, plugins, MCP connectors, permissions and token guards.",
+  "type": "module",
+  "bin": {
+    "craftcode": "./src/index.mjs",
+    "craftcli": "./src/index.mjs"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "zod": "^4.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codecraft",
+    "coding-agent",
+    "cli",
+    "tui",
+    "mcp",
+    "claude-skills",
+    "ai-agent",
+    "code-agent"
+  ],
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AIM-IT4/craftcode-CLI.git"
+  },
+  "homepage": "https://github.com/AIM-IT4/craftcode-CLI#readme",
+  "bugs": {
+    "url": "https://github.com/AIM-IT4/craftcode-CLI/issues"
+  }
+}
