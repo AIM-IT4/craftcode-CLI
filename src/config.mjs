@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 10,
+  configVersion: 11,
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
   // "auto" infers the CodeCraft tier from X-RateLimit-Limit. Set a number to override.
@@ -54,7 +54,7 @@ const defaults = {
   },
   connectorCatalog: {
     supabase: { type: 'http', url: 'https://mcp.supabase.com/mcp', oauth: true },
-    vercel: { type: 'http', url: 'https://mcp.vercel.com', oauth: true },
+    vercel: { type: 'cli', command: 'vercel', requirement: 'Vercel CLI device login', authHint: 'Craft Code uses Vercel CLI authentication because Vercel MCP OAuth only accepts approved clients.' },
     github: {
       type: 'http',
       url: 'https://api.githubcopilot.com/mcp/',
