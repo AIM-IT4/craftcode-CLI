@@ -368,9 +368,19 @@ export class TerminalTui{
       line+=txt;x+=n;
       if(i<items.length-1){const d=divider();line+=d;x+=width(d);}
     }
-    const right=[chip(crop(this.model,18),{tone:'orange',icon:'◐'}),chip(this.effort[0].toUpperCase()+this.effort.slice(1),{tone:'violet'})];
-    if(this.lastCheckpoint)right.push(chip('Undo',{tone:'yellow',icon:'↶'}));
-    const rightText=right.join(divider()),space=Math.max(2,w-width(line)-width(rightText)-2);
+    const right=[
+      {text:chip(crop(this.model,18),{tone:'orange',icon:'◐'}),action:'model'},
+      {text:chip(this.effort[0].toUpperCase()+this.effort.slice(1),{tone:'violet'}),action:'effort'}
+    ];
+    if(this.lastCheckpoint)right.push({text:chip('Undo',{tone:'yellow',icon:'↶'}),action:'undo'});
+    const rightText=right.map(x=>x.text).join(divider()),space=Math.max(2,w-width(line)-width(rightText)-2);
+    if(this.mouseCapture){
+      let rx=width(line)+space+1;
+      for(let i=0;i<right.length;i++){
+        const n=width(right[i].text);this.regions.push({x1:rx,x2:rx+n-1,y,action:right[i].action});rx+=n;
+        if(i<right.length-1)rx+=width(divider());
+      }
+    }
     return fit(line+' '.repeat(space)+rightText,w);
   }
   usageLine(w,y){
