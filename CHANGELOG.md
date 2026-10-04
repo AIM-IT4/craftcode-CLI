@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.9
+
+- Fixed long turns silently stopping mid-edit or mid-reasoning when the adaptive TPM step cap was reached.
+- Tool-heavy turns now continue automatically in bounded segments instead of treating the per-segment rate-protection cap as task completion.
+- Responses ending with provider `finish_reason: length` now continue automatically instead of truncating the turn.
+- Added a bounded `maxTurnSegments` safety ceiling (default 3); if it is exhausted, Craft Code visibly reports that the task may be incomplete instead of silently ending.
+- Added cross-platform regression tests for both silent-stop paths.
+
 ## 0.9.8
 
 - Fixed mouse-wheel transcript scrolling in Windows Terminal native-selection mode.

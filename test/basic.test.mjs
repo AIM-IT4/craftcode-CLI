@@ -347,3 +347,44 @@ test('mouse UI toggles between SGR wheel events and alternate-scroll translation
     assert.match(out,/1006l/);assert.match(out,/1000l/);assert.match(out,/1007h/);
   }finally{process.stdout.write=old;}
 });
+
+
+import { AgentSession } from '../src/agent.mjs';
+
+function reliabilitySession({client,events={}}){
+  return new AgentSession({
+    client,model:'m',cwd:process.cwd(),mode:'build',effort:'high',
+    config:{maxAgentSteps:20,autoCompactChars:300000,tokenGuard:{}},
+    usage:{add:async()=>{}},
+    skills:{list:()=>[]},plugins:{list:()=>[],hook:async()=>[]},mcp:{list:()=>[]},
+    tools:{definitions:()=>[],execute:async()=> 'ok'},events
+  });
+}
+
+test('agent continues after adaptive step segment instead of silently ending',async()=>{
+  let calls=0;
+  const client={rateLimits:{tpmLimit:200000},stream:async({onText})=>{
+    calls++;
+    if(calls<=12)return{message:{role:'assistant',content:null,tool_calls:[{id:'c'+calls,type:'function',function:{name:'read_file',arguments:'{}'}}]},usage:{total_tokens:1},finishReason:'tool_calls'};
+    onText?.('completed');
+    return{message:{role:'assistant',content:'completed'},usage:{total_tokens:1},finishReason:'stop'};
+  }};
+  const session=reliabilitySession({client});session.clear();
+  const r=await session.run('complete a multi-step change');
+  assert.equal(calls,13);
+  assert.equal(r.text,'completed');
+});
+
+test('agent continues when provider stops a response at output length',async()=>{
+  let calls=0;
+  const client={rateLimits:{tpmLimit:500000},stream:async({onText})=>{
+    calls++;
+    const text=calls===1?'partial ':'completed';
+    onText?.(text);
+    return{message:{role:'assistant',content:text},usage:{total_tokens:1},finishReason:calls===1?'length':'stop'};
+  }};
+  const session=reliabilitySession({client});session.clear();
+  const r=await session.run('finish the response');
+  assert.equal(calls,2);
+  assert.equal(r.text,'partial completed');
+});

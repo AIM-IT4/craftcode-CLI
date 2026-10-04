@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 12,
+  configVersion: 13,
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
   // "auto" infers the CodeCraft tier from X-RateLimit-Limit. Set a number to override.
@@ -15,6 +15,7 @@ const defaults = {
   defaultMode: 'build',
   defaultEffort: 'high',
   maxAgentSteps: 20,
+  maxTurnSegments: 3,
   maxOutputTokens: 8192,
   autoCompactChars: 300_000,
   tokenGuard: {
