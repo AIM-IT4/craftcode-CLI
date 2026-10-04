@@ -463,3 +463,25 @@ test('provider registry creates CodeCraft, OpenRouter and custom compatible clie
   assert.equal(registry.create('openrouter',{apiKey:'x'}).id,'openrouter');
   const local=registry.create('local');assert.equal(local.id,'local');assert.equal('Authorization' in local.headers(),false);
 });
+
+
+test('TUI exposes provider commands and provider picker',async()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),provider:'codecraft',model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  tui.input='/prov';
+  const cmds=tui.commandSuggestions().map(x=>x.cmd);
+  assert.ok(cmds.includes('/provider'));
+  assert.ok(cmds.includes('/providers'));
+  const pending=tui.pickProvider([{id:'codecraft',label:'CodeCraft',meta:'connected'},{id:'openrouter',label:'OpenRouter',meta:'connected'}],'codecraft');
+  assert.equal(tui.modal.type,'provider');
+  assert.equal(tui.modal.items[1].id,'openrouter');
+  tui.resolvePicker?.('openrouter');
+  if(tui.modal)tui.modal.resolve?.('openrouter');
+  await Promise.race([pending,Promise.resolve('skip')]);
+});
+
+test('TUI provider metadata can change independently from model',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),provider:'codecraft',model:'cc-model',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  tui.setMeta({provider:'openrouter',model:'or-model'});
+  assert.equal(tui.provider,'openrouter');
+  assert.equal(tui.model,'or-model');
+});
