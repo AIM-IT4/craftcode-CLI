@@ -79,11 +79,11 @@ const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth(
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
-  if(version){console.log('Craft Code 0.9.0');return;}
+  if(version){console.log('Craft Code 0.9.1');return;}
   if(action==='auth'){await handleAuth(actionArg);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.0');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.1');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -220,7 +220,7 @@ async function main(){
         else tui.add('assistant',mcp.list().map(x=>`${x.connected?'●':'○'} ${x.name} [${x.type}${x.oauth?' · OAuth':''}]`).join('\n')||'No MCP servers configured.');return;
       }
       if(cmd==='/connect'){
-        let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}tui.setNotice(`Opening ${name} authorization…`,0);await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);return;
+        let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
       }
       if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
       if(cmd==='/agents'){const xs=agents.list();tui.add('assistant',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
