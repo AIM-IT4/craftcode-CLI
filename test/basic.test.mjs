@@ -274,3 +274,17 @@ test('mouse capture is explicit and reversible',()=>{
   try{tui.setMouseCapture(true);assert.equal(tui.mouseCapture,true);tui.setMouseCapture(false);assert.equal(tui.mouseCapture,false);}finally{process.stdout.write=old;}
   assert.match(out,/1000h/);assert.match(out,/1000l/);
 });
+
+
+test('Vercel connector uses CLI device auth instead of unapproved MCP OAuth', async()=>{
+  const {loadConfig}=await import('../src/config.mjs');const cfg=await loadConfig(process.cwd());
+  assert.equal(cfg.connectorCatalog.vercel.type,'cli');
+  assert.equal(cfg.connectorCatalog.vercel.oauth,undefined);
+  assert.match(cfg.connectorCatalog.vercel.authHint,/approved MCP clients/i);
+});
+
+test('vercel_api is exposed as a first-class agent tool',()=>{
+  const skills={list:()=>[],load:async()=>({})},plugins={list:()=>[],toolEntries:()=>[],activate:()=>{}},mcp={list:()=>[],tools:async()=>[],call:async()=>({})};
+  const registry=new ToolRegistry({cwd:process.cwd(),config:{permissions:{mcp:'ask'},ignore:[],tokenGuard:{}},skills,plugins,mcp,askFn:async()=>true});
+  assert.ok(registry.definitions('build').some(x=>x.function?.name==='vercel_api'));
+});
