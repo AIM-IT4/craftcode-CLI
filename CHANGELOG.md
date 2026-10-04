@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.4
+
+- Native terminal drag-selection and Ctrl+C copying are enabled by default; mouse capture is opt-in with `/mouse on`.
+- Fixed composer/response overlap by avoiding exact-column terminal autowrap and reserving footer height before transcript allocation.
+- Reworked the bottom status/control area into compact borderless grouped segments with clearer hierarchy and a copy/command hint.
+- Retained optional clickable controls for users who explicitly enable mouse UI.
+- Updated the website and repository presentation for the final UX polish release.
+
 ## 0.9.3
 
 - Fixed MCP OAuth provider compatibility with the current SDK: callable state, callback-state validation, discovery-state persistence, and fresh post-OAuth HTTP transport.

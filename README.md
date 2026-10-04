@@ -67,9 +67,9 @@ Most coding agents hide at least one important thing: context growth, permission
 ### Professional terminal workflow
 
 - Streaming responses with inline `Thinking…`, search, read, edit, test and review activity.
-- Mouse-wheel conversation scrolling plus **Select** mode (`/select`) for normal terminal drag-selection and Ctrl+C copying.
+- Native terminal drag-selection + `Ctrl+C` copying works by default. Clickable mouse controls are optional via `/mouse on`; `/mouse off` restores native selection.
 - Inline red/green code edit previews directly under edit tool cards.
-- Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls.
+- Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
 - File attachment/autocomplete with `@path/to/file`.
 - Git checkpoints and `/undo`.
 - Shell shortcut syntax such as `!git status` through the normal permission layer.

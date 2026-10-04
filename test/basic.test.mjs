@@ -252,3 +252,23 @@ test('public GitHub repo URL parser rejects local/non-GitHub targets', async()=>
   assert.throws(()=>parseGitHubRepoUrl('http://127.0.0.1:3000/x'),/blocked/i);
   assert.throws(()=>parseGitHubRepoUrl('https://example.com/x/y'),/github\.com/i);
 });
+
+
+test('native terminal selection is the default',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});
+  assert.equal(tui.mouseCapture,false);
+});
+
+test('frame painter stays one column short to prevent terminal autowrap overlap',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});
+  tui.prevLines=[];let out='';const old=process.stdout.write;process.stdout.write=s=>{out+=String(s);return true;};
+  try{tui.paintFrame(['x'],10);}finally{process.stdout.write=old;}
+  assert.equal(tui.prevLines[0].length,9);
+});
+
+test('mouse capture is explicit and reversible',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.running=true;tui.schedule=()=>{};tui.render=()=>{};
+  let out='';const old=process.stdout.write;process.stdout.write=s=>{out+=String(s);return true;};
+  try{tui.setMouseCapture(true);assert.equal(tui.mouseCapture,true);tui.setMouseCapture(false);assert.equal(tui.mouseCapture,false);}finally{process.stdout.write=old;}
+  assert.match(out,/1000h/);assert.match(out,/1000l/);
+});

@@ -59,7 +59,8 @@ const COMMANDS=[
   {cmd:'/init',desc:'Create a starter AGENTS.md'},
   {cmd:'/settings',desc:'Persistent workspace settings'},
   {cmd:'/bash',desc:'Run a shell command (or prefix input with !)'},
-  {cmd:'/select',desc:'Release mouse capture so terminal text can be selected/copied'},
+  {cmd:'/select',desc:'Ensure native terminal text selection/copy is enabled'},
+  {cmd:'/mouse',desc:'Optional clickable footer UI: /mouse on|off'},
   {cmd:'/new',desc:'Start fresh session'},
   {cmd:'/help',desc:'Keyboard shortcuts'},
   {cmd:'/exit',desc:'Quit Craft Code'},
@@ -72,12 +73,11 @@ function daysUntilReset(resetDay){
   const ms=t-now,days=Math.floor(ms/86400000),hrs=Math.floor((ms%86400000)/3600000);
   return days>0?`${days}d ${hrs}h`:`${hrs}h`;
 }
-function pill(label,{tone='slate',focused=false}={}){
+function chip(label,{tone='slate',icon=''}={}){
   const fg=tone==='green'?'green':tone==='yellow'?'yellow':tone==='red'?'red':tone==='orange'?'orange':tone==='blue'?'blue':tone==='violet'?'violet':'white';
-  const bg=focused?'bgFocus':'bgPill';
-  return `${C[bg]}${C[fg]} ${label} ${C.reset}`;
+  return `${icon?paint(fg,icon+' '):''}${paint(fg,label)}`;
 }
-
+const divider=()=>paint('slate2','  │  ');
 function inlineMd(s){
   let x=String(s??'');
   x=x.replace(/\[([^\]]+)\]\(([^)]+)\)/g,(_,label,url)=>`${C.underline}${label}${C.reset}${C.dim} (${url})${C.reset}`);
@@ -129,14 +129,14 @@ export class TerminalTui{
     this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
     this.fileSuggestionIndex=0;this.commandSelection=0;this.toolSelection=null;this.spinnerIndex=0;
-    this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;
+    this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;this.mouseCapture=!!o.mouseCapture;
     this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;this.selectionMode=false;
     this._data=b=>this.handleData(String(b));this._resize=()=>{this.prevLines=[];this.render();};
   }
   start(){
     if(!process.stdin.isTTY||!process.stdout.isTTY)throw new Error('Craft Code requires an interactive terminal.');
     this.running=true;
-    process.stdout.write(`${CSI}?1049h${CSI}?25l${CSI}?2004h${CSI}?1000h${CSI}?1006h${CSI}2J${CSI}H`);
+    process.stdout.write(`${CSI}?1049h${CSI}?25l${CSI}?2004h${this.mouseCapture?`${CSI}?1000h${CSI}?1006h`:''}${CSI}2J${CSI}H`);
     process.stdin.setEncoding('utf8');process.stdin.setRawMode(true);process.stdin.resume();
     process.stdin.on('data',this._data);process.stdout.on('resize',this._resize);
     this._tick=setInterval(()=>{if(this.busy){this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;this.schedule();}},120);
@@ -148,20 +148,16 @@ export class TerminalTui{
     try{process.stdin.setRawMode(false);}catch{}
     process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?2004l${CSI}?25h${CSI}?1049l`);
   }
-  schedule(){if(this.selectionMode||this.renderQueued)return;this.renderQueued=true;setTimeout(()=>{this.renderQueued=false;this.render();},16);}
-  enterSelectionMode(){
-    if(this.selectionMode)return;
-    this.notice='SELECT · drag to select · Ctrl+C copy · Esc return';
-    this.prevLines=[];this.render();
-    this.selectionMode=true;
-    process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?25h`);
-  }
-  exitSelectionMode(){
-    if(!this.selectionMode)return;
-    this.selectionMode=false;this.notice='';
-    process.stdout.write(`${CSI}?1000h${CSI}?1006h${CSI}?25l`);
+  schedule(){if(this.renderQueued)return;this.renderQueued=true;setTimeout(()=>{this.renderQueued=false;this.render();},16);}
+  setMouseCapture(on){
+    const next=!!on;if(next===this.mouseCapture)return;
+    this.mouseCapture=next;
+    process.stdout.write(next?'\x1b[?1000h\x1b[?1006h':'\x1b[?1006l\x1b[?1000l');
+    this.setNotice(next?'Mouse UI ON · /mouse off restores native copy':'Native selection ON · drag to select · Ctrl+C copy',2200);
     this.prevLines=[];this.render();
   }
+  enterSelectionMode(){this.setMouseCapture(false);}
+  exitSelectionMode(){/* native selection persists while mouse capture is off */}
   setMeta(x={}){if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
@@ -220,6 +216,7 @@ export class TerminalTui{
   }
   selectTool(delta=0,toggle=false){const idxs=this.transcript.map((m,i)=>m.role==='toolcard'?i:-1).filter(i=>i>=0);if(!idxs.length){this.setNotice('No tool cards yet.');return;}let p=this.toolSelection==null?idxs.length-1:idxs.indexOf(this.toolSelection);if(p<0)p=idxs.length-1;p=Math.max(0,Math.min(idxs.length-1,p+delta));this.toolSelection=idxs[p];if(toggle)this.transcript[this.toolSelection].expanded=!this.transcript[this.toolSelection].expanded;this.schedule();}
   handleMouse(seq){
+    if(!this.mouseCapture)return;
     const m=seq.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);if(!m||m[4]!=='M')return;
     const button=Number(m[1]),x=Number(m[2]),y=Number(m[3]);
     if(button&64){
@@ -245,7 +242,6 @@ export class TerminalTui{
     if(action==='agents')return this.onCommand?.('/agents');
   }
   handleData(data){
-    if(this.selectionMode){if(data.includes('\x1b'))this.exitSelectionMode();return;}
     while(data.length){
       const mm=data.match(/^\x1b\[<\d+;\d+;\d+[Mm]/);if(mm){this.handleMouse(mm[0]);data=data.slice(mm[0].length);continue;}
       if(data.startsWith('\r\n')){this.handleKey('\r');data=data.slice(2);continue;}
@@ -356,22 +352,42 @@ export class TerminalTui{
     return{suggestions,box,startY};
   }
   toolbarLine(w,y){
-    const u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total),pct=u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0;
     const permLabel=this.permissionPreset==='auto'?'Auto':this.permissionPreset==='edit'?'Edit':this.permissionPreset==='locked'?'Read only':'Ask';
-    const left=[{label:'＋',action:'plus',tone:'orange'},{label:'@',action:'attach'},{label:'Select',action:'select',tone:'blue'},{label:this.mode.toUpperCase(),action:'mode',tone:this.mode==='build'?'green':'yellow'},{label:permLabel,action:'permissions',tone:this.permissionPreset==='auto'?'green':this.permissionPreset==='locked'?'red':'yellow'},{label:`MCP ${this.startupMeta?.mcp||0}`,action:'connectors',tone:'blue'},...(this.agents.length?[{label:`Agents ${this.agents.filter(a=>a.status==='running'||a.status==='starting').length||this.agents.length}`,action:'agents',tone:'violet'}]:[])];
-    const right=[{label:crop(this.model,22),action:'model',tone:'orange'},{label:this.effort[0].toUpperCase()+this.effort.slice(1),action:'effort',tone:'violet'},...(this.lastCheckpoint?[{label:'Undo',action:'undo',tone:'yellow'}]:[])];
-    let line='  ',x=3;for(const item of left){const txt=pill(item.label,{tone:item.tone});const n=width(txt);this.regions.push({x1:x,x2:x+n-1,y,action:item.action});line+=txt+' ';x+=n+1;}
-    const rightText=right.map(i=>pill(i.label,{tone:i.tone})).join(' '),space=Math.max(1,w-width(line)-width(rightText)-1);let rx=width(line)+space+1;line+=' '.repeat(space);for(let i=0;i<right.length;i++){const txt=pill(right[i].label,{tone:right[i].tone}),n=width(txt);this.regions.push({x1:rx,x2:rx+n-1,y,action:right[i].action});line+=txt+(i===right.length-1?'':' ');rx+=n+1;}
-    return fit(line,w);
+    const items=[
+      {label:'Add',icon:'＋',action:'plus',tone:'orange'},
+      {label:'Files',icon:'@',action:'attach',tone:'cyan'},
+      {label:this.mode.toUpperCase(),icon:this.mode==='build'?'◆':'◇',action:'mode',tone:this.mode==='build'?'green':'yellow'},
+      {label:permLabel,icon:'⌁',action:'permissions',tone:this.permissionPreset==='auto'?'green':this.permissionPreset==='locked'?'red':'yellow'},
+      {label:`MCP ${this.startupMeta?.mcp||0}`,icon:'↗',action:'connectors',tone:'blue'}
+    ];
+    if(this.agents.length)items.push({label:`Agents ${this.agents.filter(a=>a.status==='running'||a.status==='starting').length||this.agents.length}`,icon:'◈',action:'agents',tone:'violet'});
+    let line='  ',x=3;
+    for(let i=0;i<items.length;i++){
+      const item=items[i],txt=chip(item.label,{tone:item.tone,icon:item.icon}),n=width(txt);
+      if(this.mouseCapture)this.regions.push({x1:x,x2:x+n-1,y,action:item.action});
+      line+=txt;x+=n;
+      if(i<items.length-1){const d=divider();line+=d;x+=width(d);}
+    }
+    const right=[chip(crop(this.model,18),{tone:'orange',icon:'◐'}),chip(this.effort[0].toUpperCase()+this.effort.slice(1),{tone:'violet'})];
+    if(this.lastCheckpoint)right.push(chip('Undo',{tone:'yellow',icon:'↶'}));
+    const rightText=right.join(divider()),space=Math.max(2,w-width(line)-width(rightText)-2);
+    return fit(line+' '.repeat(space)+rightText,w);
   }
   usageLine(w,y){
     const u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total),pct=u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0,ctx=fmtTokens(Math.ceil(this.contextChars/4));
-    const planLabel=u.plan===Infinity?'◔ Unlimited':`◔ ${pct}% · ${fmtPlan(rem)} left · resets ${daysUntilReset(this.resetDay)}`;
-    const a=pill(planLabel,{tone:pct>=90?'red':pct>=70?'yellow':'green'}),b=pill(`◔ Today ${fmtTokens(today)}`,{tone:'blue'}),c=pill(`Context ${ctx}`,{tone:'violet'});
-    let line='  ',x=3;for(const [txt,action] of [[a,'usage'],[b,'usage'],[c,'usage']]){const n=width(txt);this.regions.push({x1:x,x2:x+n-1,y,action});line+=txt+' ';x+=n+1;}return fit(line,w);
+    const plan=u.plan===Infinity?'Unlimited':`${pct}% · ${fmtPlan(rem)} left`;
+    const parts=[
+      chip(plan,{tone:pct>=90?'red':pct>=70?'yellow':'green',icon:'◔'}),
+      chip(`Today ${fmtTokens(today)}`,{tone:'blue',icon:'◷'}),
+      chip(`Context ${ctx}`,{tone:'violet',icon:'◇'})
+    ];
+    const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','mouse UI on · /mouse off for native copy'):paint('dim','drag select · Ctrl+C · / commands');
+    const line='  '+joined,space=Math.max(2,w-width(line)-width(hint)-2);
+    if(this.mouseCapture)this.regions.push({x1:3,x2:3+width(joined),y,action:'usage'});
+    return fit(line+' '.repeat(space)+hint,w);
   }
   renderChat(){
-    const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=cols-2;
+    const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=Math.max(68,cols-3);
     this.regions=[];
     const workspace=crop(path.basename(this.cwd),32),header=`  ${paint('orange','✦')} ${paint('bold','Craft Code')} ${paint('dim','·')} ${paint('slate',workspace)}`;
     const right=this.notice?paint('yellow',crop(this.notice,42)):paint('dim','CodeCraft');
@@ -382,8 +398,9 @@ export class TerminalTui{
     if(this.todos.length){progress.push(`  ${paint('dim','Progress')}`);for(const t of this.todos.slice(0,5))progress.push(`  ${t.status==='completed'?paint('green','✓'):t.status==='in_progress'?paint('orange',spinner[this.spinnerIndex]):paint('dim','○')} ${paint(t.status==='in_progress'?'white':'slate',crop(t.text,w-8))}`);}
     if(this.queue.length)progress.push(`  ${paint('blue','↳')} ${paint('dim',`${this.queue.length} queued`)}`);
     const runningAgents=this.agents.filter(a=>a.status==='running'||a.status==='starting');if(runningAgents.length){progress.push(`  ${paint('dim','Agents')}`);for(const a of runningAgents.slice(0,4))progress.push(`  ${paint('violet',spinner[this.spinnerIndex])} ${paint('white',a.role)} ${paint('dim',`${fmtTokens(a.used||0)}/${fmtTokens(a.budget||0)} · ${crop(a.task,w-28)}`)}`);}
-    const ov=this.overlay(w),composer=this.renderComposer(w,0),fixed=1+1+progress.length+ov.length+composer.suggestions.length+composer.box.length+1+1+1;
-    const bodyH=Math.max(4,rows-fixed);
+    const ov=this.overlay(w),composer=this.renderComposer(w,0);
+    const chromeH=2+progress.length+ov.length+composer.suggestions.length+composer.box.length+2;
+    const bodyH=Math.max(3,rows-chromeH);
     if(this.scrollOffset){const e=Math.max(0,body.length-this.scrollOffset);body=body.slice(Math.max(0,e-bodyH),e);}else body=body.slice(-bodyH);
     const out=[top,paint('slate2','─'.repeat(w))];
     for(let i=0;i<bodyH;i++)out.push(body[i]||'');
@@ -395,7 +412,7 @@ export class TerminalTui{
     this.paintFrame(out.slice(0,rows),cols);
   }
   paintFrame(lines,cols){
-    const normalized=lines.map(x=>fit(x,cols));
+    const safeCols=Math.max(1,cols-1);const normalized=lines.map(x=>fit(x,safeCols));
     let buf=`${CSI}?25l`;
     if(!this.prevLines.length){buf+=`${CSI}2J`;}
     const max=Math.max(this.prevLines.length,normalized.length);
