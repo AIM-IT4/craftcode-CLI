@@ -3,200 +3,248 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#f7f0dc">
-  <title>Craft Code — terminal coding agent for CodeCraft</title>
-  <meta name="description" content="Open-source CodeCraft-native terminal coding and research agent with parallel agents, browser automation, plugins, skills, connectors, inline diffs and token-aware execution.">
+  <meta name="theme-color" content="#f4eddb">
+  <title>Craft Code — own the coding loop</title>
+  <meta name="description" content="Craft Code is an open-source CodeCraft-native terminal coding agent with parallel agents, browser automation, plugins, connectors, inline diffs and token-aware execution.">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div class="cursor-glow" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="pointer-orb" aria-hidden="true"></div>
 
-  <header class="nav-shell">
-    <nav class="nav">
-      <a class="brand" href="#top"><span class="brand-mark">✦</span> CRAFT CODE</a>
-      <div class="nav-links">
-        <a href="#features">FEATURES</a>
-        <a href="#flow">FLOW</a>
-        <a href="#browser">BROWSER</a>
-        <a href="#install">INSTALL</a>
-      </div>
-      <a class="nav-github brutal-button small" href="https://github.com/AIM-IT4/craftcode-CLI">GITHUB ↗</a>
+  <header class="site-header">
+    <a class="brand" href="#top"><span>✦</span> CRAFT CODE</a>
+    <nav>
+      <a href="#terminal">TERMINAL</a>
+      <a href="#features">FEATURES</a>
+      <a href="#browser">BROWSER</a>
+      <a href="#install">INSTALL</a>
     </nav>
+    <a class="nav-cta punch" href="https://github.com/AIM-IT4/craftcode-CLI">GITHUB ↗</a>
   </header>
 
   <main id="top">
     <section class="hero">
-      <div class="hero-copy reveal">
-        <div class="eyebrow brutal-label">OPEN SOURCE / CODECRAFT NATIVE / NODE 20+</div>
-        <h1>CODE.<br><span class="highlight-yellow">THINK.</span><br><span class="outline-text">SHIP.</span></h1>
-        <p class="lede">A terminal-native coding and research agent with parallel subagents, browser automation, skills, plugins, connectors, checkpoints, inline diffs and token-aware execution.</p>
-        <div class="hero-actions">
-          <a class="brutal-button yellow" href="#install">INSTALL CRAFT CODE ↓</a>
-          <a class="brutal-button white" href="https://github.com/AIM-IT4/craftcode-CLI">VIEW SOURCE ↗</a>
-        </div>
-        <div class="stat-strip">
-          <div><strong>9/9</strong><span>CI matrix</span></div>
-          <div><strong>∞</strong><span>workspaces</span></div>
-          <div><strong>1 CLI</strong><span>agents + browser</span></div>
-        </div>
-      </div>
+      <div class="hero-grid">
+        <div class="hero-copy motion-in">
+          <div class="sticker cyan">OPEN SOURCE / CODECRAFT NATIVE</div>
+          <h1>
+            <span>OWN</span>
+            <span class="yellow slab">THE</span>
+            <span class="stroke">CODING</span>
+            <span>LOOP.</span>
+          </h1>
+          <p class="lede">A terminal-native coding and research agent that can inspect, plan, edit, browse, verify and ship—without hiding the work from you.</p>
 
-      <aside class="hero-note reveal delay-1">
-        <div class="tape">WHY ANOTHER AGENT?</div>
-        <p>Because a coding agent should feel like a tool you own—not a black box you rent.</p>
-        <div class="scribble">local context → explicit permissions → visible edits → undo</div>
-      </aside>
+          <div class="hero-actions">
+            <a class="punch yellow" href="#install">INSTALL NOW ↓</a>
+            <a class="punch paper" href="https://www.npmjs.com/package/craftcode-codecraft">NPM ↗</a>
+          </div>
+
+          <div class="proof-strip">
+            <div><b>9/9</b><span>CI matrix</span></div>
+            <div><b>NODE 20+</b><span>cross-platform</span></div>
+            <div><b>MIT</b><span>open source</span></div>
+          </div>
+        </div>
+
+        <aside class="hero-board motion-in delay-1">
+          <div class="tape">WHY CRAFT CODE?</div>
+          <div class="board-number">01</div>
+          <h2>Because coding agents should behave like tools you own.</h2>
+          <ul>
+            <li>Visible edits</li>
+            <li>Explicit permissions</li>
+            <li>Undo checkpoints</li>
+            <li>Parallel bounded agents</li>
+          </ul>
+          <div class="arrow-note">terminal first ↘</div>
+        </aside>
+      </div>
     </section>
 
-    <section class="terminal-section reveal" id="flow">
-      <div class="section-tag pink">LIVE FLOW</div>
-      <div class="terminal-wrap">
-        <div class="terminal-chrome">
-          <div class="window-title"><span class="terminal-logo">✦</span> Craft Code <span class="dim">· desk2quant</span></div>
-          <div class="terminal-badge">CODECRAFT</div>
+    <section class="terminal-stage" id="terminal">
+      <div class="section-kicker pink motion-in">LIVE TERMINAL / PRODUCT FLOW</div>
+
+      <div class="terminal-shell motion-in" data-parallax>
+        <div class="terminal-top">
+          <div class="terminal-brand"><span class="spark">✦</span> Craft Code <span class="muted">· desk2quant</span></div>
+          <div class="terminal-mode">CODECRAFT</div>
         </div>
 
-        <div class="terminal-body" id="terminalBody" aria-live="polite">
-          <div class="terminal-line static"><span class="prompt">❯</span><span id="typedPrompt"></span><span class="cursor">▌</span></div>
-          <div class="terminal-stream" id="terminalStream"></div>
+        <div class="terminal-viewport">
+          <div class="terminal-prompt">
+            <span class="prompt-mark">❯</span>
+            <span id="terminalPrompt"></span>
+            <span class="blink">▌</span>
+          </div>
+          <div id="terminalOutput" class="terminal-output"></div>
         </div>
 
-        <div class="terminal-composer">
+        <div class="terminal-input">
           <span>Ask anything…</span>
-          <span class="composer-shortcut">@ files &nbsp; · &nbsp; / commands</span>
-          <span class="composer-cursor">▌</span>
+          <small>@ files &nbsp; · &nbsp; / commands</small>
+          <b class="blink">▌</b>
         </div>
 
-        <div class="terminal-status">
-          <span><b>◔ 23%</b> · 23.2M left</span>
+        <div class="terminal-footer">
+          <span class="good">◔ 23% · 23.2M left</span>
           <span>◷ Today 1.8M</span>
           <span>◇ Context 18k</span>
-          <span class="status-green">◆ BUILD</span>
+          <span class="good">◆ BUILD</span>
           <span>⌁ Ask</span>
           <span>◐ Opus</span>
         </div>
       </div>
 
-      <div class="flow-rail" aria-hidden="true">
-        <span>UNDERSTAND</span><b>→</b><span>PLAN</span><b>→</b><span>EDIT</span><b>→</b><span>VERIFY</span><b>→</b><span>SHIP</span>
+      <div class="workflow-track motion-in">
+        <div data-flow="0"><b>01</b><span>UNDERSTAND</span></div>
+        <i>→</i>
+        <div data-flow="1"><b>02</b><span>PLAN</span></div>
+        <i>→</i>
+        <div data-flow="2"><b>03</b><span>EDIT</span></div>
+        <i>→</i>
+        <div data-flow="3"><b>04</b><span>VERIFY</span></div>
+        <i>→</i>
+        <div data-flow="4"><b>05</b><span>SHIP</span></div>
+      </div>
+    </section>
+
+    <section class="statement">
+      <div class="statement-marquee">
+        <div>
+          <span>NO BLACK BOX</span><b>✹</b><span>VISIBLE DIFFS</span><b>✹</b><span>REAL TOOLS</span><b>✹</b><span>YOUR TERMINAL</span><b>✹</b>
+          <span>NO BLACK BOX</span><b>✹</b><span>VISIBLE DIFFS</span><b>✹</b><span>REAL TOOLS</span><b>✹</b><span>YOUR TERMINAL</span><b>✹</b>
+        </div>
       </div>
     </section>
 
     <section class="features section" id="features">
-      <div class="section-head reveal">
-        <div class="section-tag cyan">01 / BUILT FOR REAL WORK</div>
-        <h2>Not a chat box.<br><span>AN ENGINEERING LOOP.</span></h2>
+      <div class="section-title motion-in">
+        <span class="section-kicker cyan">01 / REAL AGENT WORKFLOW</span>
+        <h2>NOT A CHAT BOX.<br><em>AN ENGINEERING LOOP.</em></h2>
       </div>
 
       <div class="feature-grid">
-        <article class="feature-card yellow-card reveal">
-          <span class="feature-num">01</span><div class="feature-icon">↺</div>
+        <article class="feature-card c-yellow tilt-a motion-in">
+          <span class="num">01</span><span class="icon">↺</span>
           <h3>Persistent sessions</h3>
-          <p>Resume, search, rename, fork and export workspace conversations without rebuilding context from scratch.</p>
+          <p>Resume, search, fork, rename and export workspace conversations without rebuilding context every time.</p>
         </article>
-        <article class="feature-card cyan-card reveal delay-1">
-          <span class="feature-num">02</span><div class="feature-icon">◈</div>
+        <article class="feature-card c-cyan tilt-b motion-in delay-1">
+          <span class="num">02</span><span class="icon">◈</span>
           <h3>Parallel agents</h3>
-          <p>Explorer, reviewer, tester, researcher and writer agents with bounded budgets and TPM-aware concurrency.</p>
+          <p>Explorer, reviewer, tester, researcher and writer agents with bounded token budgets and TPM-aware concurrency.</p>
         </article>
-        <article class="feature-card pink-card reveal delay-2">
-          <span class="feature-num">03</span><div class="feature-icon">±</div>
+        <article class="feature-card c-pink tilt-c motion-in delay-2">
+          <span class="num">03</span><span class="icon">±</span>
           <h3>Inline diffs</h3>
-          <p>See actual red/green edits in the conversation, then checkpoint, review, undo or keep moving.</p>
+          <p>Red/green edits appear directly in the conversation. Review the exact code before you keep moving.</p>
         </article>
-        <article class="feature-card white-card reveal">
-          <span class="feature-num">04</span><div class="feature-icon">⌁</div>
+        <article class="feature-card c-paper tilt-d motion-in">
+          <span class="num">04</span><span class="icon">⌁</span>
           <h3>Permission first</h3>
-          <p>Ask, Edit, Auto and Read-only modes govern file writes, commands and external actions.</p>
+          <p>Ask, Edit, Auto and Read-only modes govern writes, commands and external connector actions.</p>
         </article>
-        <article class="feature-card lime-card reveal delay-1">
-          <span class="feature-num">05</span><div class="feature-icon">◔</div>
+        <article class="feature-card c-lime tilt-a motion-in delay-1">
+          <span class="num">05</span><span class="icon">◔</span>
           <h3>Token aware</h3>
-          <p>Live plan usage, context accounting, adaptive TPM pacing, bounded reads and automatic compaction.</p>
+          <p>Live usage, context accounting, adaptive TPM pacing, bounded reads and automatic compaction.</p>
         </article>
-        <article class="feature-card purple-card reveal delay-2">
-          <span class="feature-num">06</span><div class="feature-icon">✦</div>
+        <article class="feature-card c-purple tilt-b motion-in delay-2">
+          <span class="num">06</span><span class="icon">✦</span>
           <h3>Open extensions</h3>
-          <p>SKILL.md, Claude-style plugins, project instructions, stdio/HTTP MCP and native connector bridges.</p>
+          <p>SKILL.md, plugins, project instructions, MCP, GitHub, Vercel, Supabase and Playwright.</p>
         </article>
+      </div>
+    </section>
+
+    <section class="agent-flow section">
+      <div class="section-title motion-in">
+        <span class="section-kicker yellow">02 / PARALLEL AGENTS</span>
+        <h2>ONE PROMPT.<br><em>MULTIPLE BRAINS.</em></h2>
+      </div>
+
+      <div class="agent-diagram motion-in">
+        <div class="agent-source">
+          <small>YOU</small>
+          <strong>“Audit checkout security.”</strong>
+        </div>
+        <div class="agent-lines" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="agent-node node-1"><b>EXPLORER</b><span>repo map</span><small>→ files + architecture</small></div>
+        <div class="agent-node node-2"><b>REVIEWER</b><span>risk map</span><small>→ regressions + security</small></div>
+        <div class="agent-node node-3"><b>TESTER</b><span>verification</span><small>→ focused checks</small></div>
+        <div class="agent-merge"><span>MERGE</span><b>one concise answer</b></div>
       </div>
     </section>
 
     <section class="browser section" id="browser">
-      <div class="browser-copy reveal">
-        <div class="section-tag yellow">02 / WEB + REPOS</div>
-        <h2>PASTE A REPO.<br><span>LET IT DIG.</span></h2>
-        <p>Public GitHub links work without cloning. Craft Code inspects metadata, README and a bounded tree, then reads only the files relevant to the job.</p>
-        <div class="mini-command">/team 3 compare these repos and find the stronger architecture</div>
+      <div class="browser-copy motion-in">
+        <span class="section-kicker pink">03 / WEB + REPOS</span>
+        <h2>PASTE A REPO.<br><em>LET IT DIG.</em></h2>
+        <p>Public GitHub links work without cloning. Craft Code reads metadata, README and a bounded tree, then opens only the files relevant to the task.</p>
+        <div class="command-card">/team 3 compare these repos and find the stronger architecture</div>
       </div>
 
-      <div class="browser-stack reveal delay-1">
-        <div class="stack-card back cyan-card"><span>03</span><b>RESEARCHER</b><small>evidence + docs</small></div>
-        <div class="stack-card middle pink-card"><span>02</span><b>REVIEWER</b><small>risk + regressions</small></div>
-        <div class="stack-card front yellow-card"><span>01</span><b>EXPLORER</b><small>repo + architecture</small></div>
+      <div class="browser-window motion-in delay-1" data-parallax>
+        <div class="browser-head">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="url">https://github.com/owner/project</div>
+        </div>
+        <div class="browser-body">
+          <div><b>01</b><strong>inspect_repo_url</strong><span>metadata · README · bounded tree</span></div>
+          <div><b>02</b><strong>read_repo_file</strong><span>only relevant source files</span></div>
+          <div><b>03</b><strong>/browser</strong><span>Playwright Chromium for dynamic pages</span></div>
+          <div><b>04</b><strong>/team N</strong><span>parallel independent research</span></div>
+        </div>
+        <div class="browser-stamp">NO CLONE NEEDED</div>
       </div>
     </section>
 
-    <section class="browser-detail section">
-      <div class="browser-panel reveal">
-        <div class="browser-top">
-          <span class="browser-dot"></span><span class="browser-dot"></span><span class="browser-dot"></span>
-          <div class="urlbar">https://github.com/owner/project</div>
-        </div>
-        <div class="browser-content">
-          <div class="crawl-line"><b>01</b><span>inspect_repo_url</span><em>metadata · README · bounded tree</em></div>
-          <div class="crawl-line"><b>02</b><span>read_repo_file</span><em>only relevant source files</em></div>
-          <div class="crawl-line"><b>03</b><span>/browser</span><em>Playwright Chromium for dynamic pages</em></div>
-          <div class="crawl-line"><b>04</b><span>/team N</span><em>parallel independent investigation</em></div>
-        </div>
+    <section class="ecosystem section">
+      <div class="section-title motion-in">
+        <span class="section-kicker cyan">04 / CONNECT EVERYTHING</span>
+        <h2>ONE CLI.<br><em>YOUR TOOLCHAIN.</em></h2>
       </div>
-      <div class="callout reveal delay-1">
-        <div class="callout-star">✹</div>
-        <strong>ZERO-INSTALL REPO RESEARCH</strong>
-        <p>Static public repositories do not need a browser. Dynamic web workflows can escalate to Playwright only when needed.</p>
-      </div>
-    </section>
-
-    <section class="extensions section">
-      <div class="section-head reveal">
-        <div class="section-tag pink">03 / EXTENSIBLE</div>
-        <h2>YOUR TERMINAL.<br><span>YOUR TOOLCHAIN.</span></h2>
-      </div>
-      <div class="marquee-shell">
-        <div class="marquee-track">
-          <span>SKILLS</span><i>✦</i><span>PLUGINS</span><i>✦</i><span>GITHUB</span><i>✦</i><span>VERCEL</span><i>✦</i><span>SUPABASE</span><i>✦</i><span>PLAYWRIGHT</span><i>✦</i><span>SUBAGENTS</span><i>✦</i>
-          <span>SKILLS</span><i>✦</i><span>PLUGINS</span><i>✦</i><span>GITHUB</span><i>✦</i><span>VERCEL</span><i>✦</i><span>SUPABASE</span><i>✦</i><span>PLAYWRIGHT</span><i>✦</i><span>SUBAGENTS</span><i>✦</i>
-        </div>
+      <div class="ecosystem-grid">
+        <div class="eco-card motion-in"><b>GITHUB</b><span>hosted MCP + gh auth</span></div>
+        <div class="eco-card motion-in delay-1"><b>VERCEL</b><span>device login + API</span></div>
+        <div class="eco-card motion-in delay-2"><b>SUPABASE</b><span>MCP browser OAuth</span></div>
+        <div class="eco-card motion-in"><b>PLAYWRIGHT</b><span>real Chromium automation</span></div>
+        <div class="eco-card motion-in delay-1"><b>SKILLS</b><span>lazy SKILL.md workflows</span></div>
+        <div class="eco-card motion-in delay-2"><b>PLUGINS</b><span>Claude-style marketplaces</span></div>
       </div>
     </section>
 
     <section class="install section" id="install">
-      <div class="install-copy reveal">
-        <div class="section-tag cyan">04 / INSTALL</div>
-        <h2>THREE LINES.<br><span>THEN BUILD.</span></h2>
+      <div class="install-copy motion-in">
+        <span class="section-kicker yellow">05 / INSTALL</span>
+        <h2>THREE LINES.<br><em>THEN BUILD.</em></h2>
         <p>Requires Node.js 20+ and a CodeCraft API key.</p>
       </div>
-      <div class="install-terminal reveal delay-1">
-        <div class="install-row"><span class="step">01</span><code>npm install -g craftcode-codecraft@latest</code><button class="copy-btn" data-copy="npm install -g craftcode-codecraft@latest">COPY</button></div>
-        <div class="install-row"><span class="step">02</span><code>craftcode auth login</code><button class="copy-btn" data-copy="craftcode auth login">COPY</button></div>
-        <div class="install-row"><span class="step">03</span><code>craftcode .</code><button class="copy-btn" data-copy="craftcode .">COPY</button></div>
+
+      <div class="install-board motion-in delay-1">
+        <div class="install-row"><span>01</span><code>npm install -g craftcode-codecraft@latest</code><button data-copy="npm install -g craftcode-codecraft@latest">COPY</button></div>
+        <div class="install-row"><span>02</span><code>craftcode auth login</code><button data-copy="craftcode auth login">COPY</button></div>
+        <div class="install-row"><span>03</span><code>craftcode .</code><button data-copy="craftcode .">COPY</button></div>
       </div>
     </section>
 
-    <section class="cta section reveal">
-      <div class="cta-box">
-        <span class="burst">NEW</span>
-        <h2>KEEP THE LOOP<br>IN YOUR TERMINAL.</h2>
-        <div>
-          <a class="brutal-button black" href="https://www.npmjs.com/package/craftcode-codecraft">NPM ↗</a>
-          <a class="brutal-button white" href="https://github.com/AIM-IT4/craftcode-CLI">STAR ON GITHUB ↗</a>
+    <section class="final-cta section motion-in">
+      <div class="cta-card">
+        <div class="burst">NEW</div>
+        <p>YOUR TERMINAL ALREADY KNOWS THE CODEBASE.</p>
+        <h2>MAKE IT<br>DO THE WORK.</h2>
+        <div class="hero-actions">
+          <a class="punch black" href="https://www.npmjs.com/package/craftcode-codecraft">GET CRAFT CODE ↗</a>
+          <a class="punch paper" href="https://github.com/AIM-IT4/craftcode-CLI">STAR ON GITHUB ↗</a>
         </div>
       </div>
     </section>
   </main>
 
   <footer>
-    <strong>✦ CRAFT CODE</strong>
+    <b>✦ CRAFT CODE</b>
     <span>MIT LICENSED · OPEN SOURCE · BUILT FOR CODECRAFT</span>
     <div><a href="https://www.npmjs.com/package/craftcode-codecraft">NPM</a><a href="https://github.com/AIM-IT4/craftcode-CLI">GITHUB</a></div>
   </footer>
