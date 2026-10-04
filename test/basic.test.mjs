@@ -519,3 +519,22 @@ test('explicit provider login activates that provider while plain login preserve
   assert.deepEqual(providerLoginPatch('openrouter','openrouter'),{provider:'openrouter'});
   assert.equal(providerLoginPatch('','codecraft'),null);
 });
+
+
+test('provider-specific CodeCraft baseUrl wins over legacy root default',async()=>{
+  const {normalizeProviderConfig}=await import('../src/config.mjs');
+  const x=normalizeProviderConfig({
+    baseUrl:'https://codecraftapi.com/v1',
+    providers:{codecraft:{type:'codecraft',baseUrl:'https://proxy.example/v1'}}
+  });
+  assert.equal(x.providers.codecraft.baseUrl,'https://proxy.example/v1');
+});
+
+test('provider status summary names provider and never calls observed usage Unlimited',async()=>{
+  const {providerStatusSummary}=await import('../src/ui.mjs');
+  const s=providerStatusSummary({providerLabel:'OpenRouter',providerId:'openrouter',model:'vendor/model',usage:{total:1234,plan:Infinity},planSource:'observed'});
+  assert.match(s,/Provider.*OpenRouter/);
+  assert.match(s,/vendor\/model/);
+  assert.match(s,/provider plan not reported/i);
+  assert.doesNotMatch(s,/Unlimited/);
+});
