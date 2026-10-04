@@ -136,7 +136,7 @@ export class TerminalTui{
   start(){
     if(!process.stdin.isTTY||!process.stdout.isTTY)throw new Error('Craft Code requires an interactive terminal.');
     this.running=true;
-    process.stdout.write(`${CSI}?1049h${CSI}?25l${CSI}?2004h${this.mouseCapture?`${CSI}?1000h${CSI}?1006h`:''}${CSI}2J${CSI}H`);
+    process.stdout.write(`${CSI}?1049h${CSI}?1007l${CSI}?25l${CSI}?2004h${this.mouseCapture?`${CSI}?1000h${CSI}?1006h`:''}${CSI}2J${CSI}H`);
     process.stdin.setEncoding('utf8');process.stdin.setRawMode(true);process.stdin.resume();
     process.stdin.on('data',this._data);process.stdout.on('resize',this._resize);
     this._tick=setInterval(()=>{if(this.busy){this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;this.schedule();}},120);
@@ -146,7 +146,7 @@ export class TerminalTui{
     if(!this.running)return;this.running=false;clearInterval(this._tick);
     process.stdin.off('data',this._data);process.stdout.off('resize',this._resize);
     try{process.stdin.setRawMode(false);}catch{}
-    process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?2004l${CSI}?25h${CSI}?1049l`);
+    process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?1007l${CSI}?2004l${CSI}?25h${CSI}?1049l`);
   }
   schedule(){if(this.renderQueued)return;this.renderQueued=true;setTimeout(()=>{this.renderQueued=false;this.render();},16);}
   setMouseCapture(on){
@@ -283,8 +283,10 @@ export class TerminalTui{
     const fs=this.fileSuggestions(),cs=this.commandSuggestions();
     if(fs.length&&(s==='\x1b[A'||s==='\x1b[B')){this.fileSuggestionIndex=(this.fileSuggestionIndex+(s==='\x1b[A'?-1:1)+fs.length)%fs.length;return this.schedule();}
     if(this.input.startsWith('/')&&cs.length&&(s==='\x1b[A'||s==='\x1b[B')){this.commandSelection=(this.commandSelection+(s==='\x1b[A'?-1:1)+cs.length)%cs.length;return this.schedule();}
-    if(s==='\x1b[A'&&!this.input.includes('\n')){if(this.history.length){this.hist=Math.min(this.history.length-1,this.hist+1);this.input=this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
-    if(s==='\x1b[B'&&!this.input.includes('\n')){if(this.hist>=0){this.hist--;this.input=this.hist<0?'':this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
+    if(s==='\x10'){if(this.history.length){this.hist=Math.min(this.history.length-1,this.hist+1);this.input=this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
+    if(s==='\x0e'){if(this.hist>=0){this.hist--;this.input=this.hist<0?'':this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
+    if(s==='\x1b[A'){this.scrollOffset+=4;return this.schedule();}
+    if(s==='\x1b[B'){this.scrollOffset=Math.max(0,this.scrollOffset-4);return this.schedule();}
     if(s==='\t'){if(this.insertFile())return;const c=this.commandSuggestions();if(c.length){this.input=c[this.commandSelection].cmd;this.cursor=this.input.length;return this.schedule();}}
     if(s>=' '&&!s.startsWith('\x1b')){this.input=this.input.slice(0,this.cursor)+s+this.input.slice(this.cursor);this.cursor+=s.length;this.fileSuggestionIndex=0;this.commandSelection=0;this.schedule();}
   }
@@ -391,7 +393,7 @@ export class TerminalTui{
       chip(`Today ${fmtTokens(today)}`,{tone:'blue',icon:'◷'}),
       chip(`Context ${ctx}`,{tone:'violet',icon:'◇'})
     ];
-    const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','mouse UI on · /mouse off for native copy'):paint('dim','drag select · Ctrl+C · / commands');
+    const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','wheel scroll · /mouse off for native copy'):paint('dim','wheel/↑↓ scroll · Ctrl+P/N history · / commands');
     const line='  '+joined,space=Math.max(2,w-width(line)-width(hint)-2);
     if(this.mouseCapture)this.regions.push({x1:3,x2:3+width(joined),y,action:'usage'});
     return fit(line+' '.repeat(space)+hint,w);

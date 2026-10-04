@@ -67,7 +67,7 @@ Most coding agents hide at least one important thing: context growth, permission
 ### Professional terminal workflow
 
 - Streaming responses with inline `Thinking…`, search, read, edit, test and review activity.
-- Native terminal drag-selection + `Ctrl+C` copying works by default. Clickable mouse controls are optional via `/mouse on`; `/mouse off` restores native selection.
+- Native terminal drag-selection + `Ctrl+C` copying works by default. Mouse wheel, Up/Down and PageUp/PageDown scroll the transcript; prompt history uses `Ctrl+P` / `Ctrl+N`. Clickable mouse controls are optional via `/mouse on`; `/mouse off` restores native selection.
 - Inline red/green code edit previews directly under edit tool cards.
 - Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
 - File attachment/autocomplete with `@path/to/file`.

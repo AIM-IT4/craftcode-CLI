@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.7
+
+- Fixed mouse-wheel scrolling on Windows Terminal and other alternate-screen terminals where wheel motion was being translated into Up/Down keystrokes and changing the prompt/history.
+- Craft Code now explicitly disables DEC Alternate Scroll Mode (`?1007l`) while the TUI is active.
+- Plain Up/Down now scroll the conversation when no file/command picker is active, providing a fallback even in terminals that still translate wheel events into arrow keys.
+- Prompt-history navigation moved to `Ctrl+P` / `Ctrl+N`; PageUp/PageDown remain larger transcript jumps.
+
 ## 0.9.6
 
 - Added adaptive CodeCraft TPM pacing before requests so concurrent agents avoid preventable 429 bursts.

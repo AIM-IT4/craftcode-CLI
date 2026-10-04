@@ -311,3 +311,26 @@ test('subagent parallelism adapts to TPM ceiling',()=>{
   assert.equal(new AgentManager({...common,client:{rateLimits:{tpmLimit:1000000}}}).parallelLimit(),3);
   assert.equal(new AgentManager({...common,client:{rateLimits:{tpmLimit:2000000}}}).parallelLimit(),4);
 });
+
+
+test('terminal startup disables alternate-scroll wheel-to-arrow translation',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});
+  const oldInTTY=process.stdin.isTTY,oldOutTTY=process.stdout.isTTY,oldRaw=process.stdin.setRawMode,oldResume=process.stdin.resume,oldOn=process.stdin.on,oldWrite=process.stdout.write,oldOutOn=process.stdout.on;
+  let out='';
+  Object.defineProperty(process.stdin,'isTTY',{value:true,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:true,configurable:true});
+  process.stdin.setRawMode=()=>{};process.stdin.resume=()=>{};process.stdin.on=()=>{};process.stdout.on=()=>{};process.stdout.write=s=>{out+=String(s);return true;};
+  tui.render=()=>{};try{tui.start();assert.match(out,/\x1b\[\?1007l/);}finally{clearInterval(tui._tick);tui.running=false;process.stdin.setRawMode=oldRaw;process.stdin.resume=oldResume;process.stdin.on=oldOn;process.stdout.on=oldOutOn;process.stdout.write=oldWrite;Object.defineProperty(process.stdin,'isTTY',{value:oldInTTY,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:oldOutTTY,configurable:true});}
+});
+
+test('plain up/down scroll transcript instead of mutating prompt history',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.running=true;tui.schedule=()=>{};tui.history=['old prompt'];tui.input='current';tui.cursor=tui.input.length;
+  tui.handleKey('\x1b[A');assert.equal(tui.input,'current');assert.equal(tui.scrollOffset,4);
+  tui.handleKey('\x1b[B');assert.equal(tui.input,'current');assert.equal(tui.scrollOffset,0);
+});
+
+test('Ctrl+P and Ctrl+N navigate prompt history explicitly',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.running=true;tui.schedule=()=>{};tui.history=['first','second'];
+  tui.handleKey('\x10');assert.equal(tui.input,'second');
+  tui.handleKey('\x10');assert.equal(tui.input,'first');
+  tui.handleKey('\x0e');assert.equal(tui.input,'second');
+});
