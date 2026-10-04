@@ -1,28 +1,26 @@
 <div align="center">
 
-# Craft Code
+<img src="./assets/craftcode-banner.svg" alt="Craft Code — CodeCraft-native terminal coding agent" width="100%" />
+
+<br />
+
+[![npm version](https://img.shields.io/npm/v/craftcode-codecraft?style=flat-square&color=cb3837&logo=npm)](https://www.npmjs.com/package/craftcode-codecraft)
+[![CI](https://img.shields.io/github/actions/workflow/status/AIM-IT4/craftcode-CLI/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/AIM-IT4/craftcode-CLI/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f0c36a?style=flat-square)](LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![npm downloads](https://img.shields.io/npm/dm/craftcode-codecraft?style=flat-square&color=6f7bf7)](https://www.npmjs.com/package/craftcode-codecraft)
 
 **A CodeCraft-native coding & research agent for your terminal.**
 
-Full-screen TUI · resumable sessions · parallel subagents · skills · Claude-style plugins · MCP connectors · OAuth · permissions · token guards
+Full-screen TUI · persistent sessions · parallel subagents · skills · Claude-style plugins · MCP/OAuth connectors · explicit permissions · token-aware execution
 
-[![npm version](https://img.shields.io/npm/v/craftcode-codecraft?color=cb3837&logo=npm)](https://www.npmjs.com/package/craftcode-codecraft)
-[![CI](https://github.com/AIM-IT4/craftcode-CLI/actions/workflows/ci.yml/badge.svg)](https://github.com/AIM-IT4/craftcode-CLI/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-
-[Install](#install) · [Features](#features) · [Sessions](#sessions) · [Agents](#parallel-agents) · [Plugins & Skills](#plugins--skills) · [Connectors](#connectors) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Features](#what-you-get) · [Commands](docs/COMMANDS.md) · [Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
-> [!NOTE]
-> Craft Code is an independent open-source client for the CodeCraft API. It is not affiliated with Anthropic, OpenAI, GitHub, Vercel, Supabase, or CodeCraft unless explicitly stated by those projects.
+---
 
-## Why Craft Code?
-
-Craft Code is built for people who want a serious terminal coding agent without hiding model usage, permissions, context, or external actions. It keeps token economics visible, supports reusable skills and plugins, and can delegate bounded tasks to parallel subagents.
-
-## Install
+## Quick start
 
 ```bash
 npm install -g craftcode-codecraft
@@ -30,85 +28,83 @@ craftcode auth login
 craftcode .
 ```
 
-Authenticate once. The CodeCraft key is validated and stored in your user profile (`~/.craftcli/auth.json`), never in the repository. `CODECRAFT_API_KEY` can still override the stored credential.
+Authenticate once, then use Craft Code from any terminal. Your CodeCraft key is stored under your user profile, never inside the repository.
 
 ```bash
-craftcode C:\\Users\\you\\project
-# or
+# Windows
+craftcode C:\Users\you\project
+
+# macOS / Linux
 craftcode /path/to/project
+
+# Continue the latest session
+craftcode -c /path/to/project
 ```
 
-Update later with:
+<div align="center">
+  <img src="./assets/tui-preview.svg" alt="Craft Code terminal interface preview" width="100%" />
+  <sub>Illustrative TUI preview — actual content, models and usage depend on your workspace and CodeCraft account.</sub>
+</div>
 
-```bash
-craftcode update
-```
+## Why Craft Code?
 
-## Features
+Most coding agents hide at least one important thing: context growth, permission boundaries, connector actions, or how much model usage a task is consuming. Craft Code keeps those controls visible while still giving you a fast agentic workflow.
 
-- **Full-screen terminal UI** with streaming responses, inline activity, command palette, interactive model/mode/permission controls and usage indicators.
-- **Plan / Build modes** with explicit write and shell permissions.
-- **Persistent sessions** with search, resume, rename, fork, export and per-workspace auto-resume.
-- **Parallel subagents** with per-agent token ceilings and isolated Git worktrees for writer agents.
-- **Skills** loaded lazily from `SKILL.md`, including `.claude/skills` and `.agents/skills` compatibility.
-- **Claude-style plugin marketplaces** with commands, skills, optional lifecycle hooks and plugin-provided MCP servers.
-- **MCP connectors** over stdio or HTTP with OAuth support where the server supports it.
-- **Project instructions** from `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`.
-- **Git checkpoints and undo** for agent file changes.
-- **Token guards** with request/session/day/plan accounting and lazy context loading.
-- **CodeCraft rate-limit handling** that respects `Retry-After` and retries 429 responses instead of killing the turn.
+| Capability | Craft Code |
+|---|---|
+| Terminal UX | Full-screen interactive TUI with streaming, command palette, inline tool activity and clickable controls |
+| Sessions | Search, resume, rename, fork, export and optional per-workspace auto-resume |
+| Agents | Parallel bounded subagents; writer agents use isolated Git worktrees |
+| Context | `@file` references, compaction, project instructions and bounded reads |
+| Skills | Lazy `SKILL.md` loading with `.claude/skills` and `.agents/skills` compatibility |
+| Plugins | Claude-style marketplaces, commands, skills and opt-in lifecycle hooks |
+| Connectors | MCP over stdio/HTTP with OAuth support where available |
+| Safety | Ask/Edit/Auto/Read-only permission presets, checkpoints and undo |
+| Tokens | Per-request/session/day/plan accounting, lazy schemas and CodeCraft 429 retry handling |
 
-## Sessions
+## What you get
 
-Resume the latest workspace session from the shell:
+### Professional terminal workflow
 
-```bash
-craftcode continue C:\\Users\\you\\project
-craftcode -c C:\\Users\\you\\project
-craftcode --resume C:\\Users\\you\\project
-```
+- Streaming responses with inline `Thinking…`, search, read, edit, test and review activity.
+- Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls.
+- File attachment/autocomplete with `@path/to/file`.
+- Git checkpoints and `/undo`.
+- Shell shortcut syntax such as `!git status` through the normal permission layer.
 
-Inside Craft Code:
+### Persistent sessions
 
 ```text
 /sessions                    searchable session picker
-/sessions search checkout    filter old sessions
 /resume                      resume latest
-/resume <id-or-title>        resume a matching session
-/session name Checkout fix   name current session
+/session name Checkout fix   rename current session
 /session fork                branch the conversation
 /session export              export transcript to Markdown
-/session delete              delete current session
+/session delete              remove current session
 /settings autoresume on      reopen latest workspace session automatically
 ```
 
-## Project instructions & context
+From the shell:
 
-Craft Code automatically loads bounded top-level instructions from `AGENTS.md`, `CLAUDE.md`, and `.github/copilot-instructions.md`.
-
-```text
-/init                  create a starter AGENTS.md
-/instructions          inspect loaded instructions
-/instructions reload   reload after editing
-/context               inspect estimated context composition
-/status                workspace/model/Git/extensions/usage summary
-/compact               compact older conversation context
+```bash
+craftcode continue /path/to/project
+craftcode -c /path/to/project
 ```
 
-## Parallel agents
+### Parallel subagents
 
 ```text
 /agents
-/agent spawn explorer <task>
-/agent spawn writer <task>
-/team 3 <task>
+/agent spawn explorer "Find the auth flow"
+/agent spawn reviewer "Review the checkout diff"
+/team 3 "Investigate this regression from different angles"
 ```
 
-Read-only workers can run concurrently with individual token budgets. Writer agents use isolated Git worktrees so concurrent changes do not collide with your main tree.
+Read-only workers can run concurrently with individual token ceilings. Writer agents are isolated in Git worktrees so concurrent edits do not collide with your main working tree.
 
-## Plugins & skills
+### Skills and Claude-style plugins
 
-Craft Code discovers `SKILL.md` lazily and supports Claude-style plugin marketplaces.
+Skills are indexed by name/description and loaded only when relevant, instead of injecting every instruction into every model request.
 
 ```text
 /plugin marketplace add DietrichGebert/ponytail
@@ -118,34 +114,77 @@ Craft Code discovers `SKILL.md` lazily and supports Claude-style plugin marketpl
 /plugin install superpowers@superpowers-marketplace
 ```
 
-Lifecycle hooks are intentionally opt-in because installed plugins may execute local commands.
+Lifecycle hooks remain opt-in because installed plugins may execute local commands.
 
-## Connectors
+### MCP connectors
 
-Use `/connect` to manage MCP connectors. Craft Code supports stdio and HTTP MCP servers, plus browser OAuth where supported. External MCP actions obey the same permission model as file and shell actions.
+Use:
 
-Typical integrations include GitHub, Vercel, Supabase and research/developer MCP servers.
+```text
+/connect
+/mcp
+```
+
+Craft Code supports stdio and HTTP MCP transports, lazy tool discovery and browser OAuth where the server supports it. GitHub, Vercel, Supabase and other MCP services can sit behind the same permission model as local shell/file actions.
+
+### Project-native instructions
+
+Craft Code automatically picks up bounded instructions from:
+
+```text
+AGENTS.md
+CLAUDE.md
+.github/copilot-instructions.md
+```
+
+Useful commands:
+
+```text
+/init
+/instructions
+/instructions reload
+/context
+/status
+/compact
+```
 
 ## Permissions
 
-Craft Code keeps permissions visible and configurable:
-
-| Mode | File edits | Shell commands |
+| Preset | File edits | Shell commands |
 |---|---|---|
-| Ask | Ask | Ask |
-| Edit | Allow | Ask |
-| Auto | Allow | Allow |
-| Read only | Deny | Deny |
+| **Ask** | Ask | Ask |
+| **Edit** | Allow | Ask |
+| **Auto** | Allow | Allow |
+| **Read only** | Deny | Deny |
 
-Use `/permissions` or the interactive permission control in the TUI.
+External MCP actions are permission-gated as well. Plugin lifecycle hooks are disabled until explicitly enabled.
 
-## Shell shortcuts
+## Token-aware by design
 
-Prefix a prompt with `!` to execute through Craft Code's normal permission layer:
+Craft Code was built to avoid common agent-token waste:
 
-```text
-!git status
-!npm test
+- search before broad reads;
+- bounded file/search/terminal output;
+- lazy skill loading;
+- lazy MCP tool-schema discovery;
+- context compaction;
+- per-agent budgets;
+- visible request/session/day/month usage;
+- automatic handling of CodeCraft `Retry-After` responses.
+
+> [!IMPORTANT]
+> The plan allowance shown in Craft Code is inferred from CodeCraft rate-limit metadata when possible. Historical usage outside Craft Code cannot be reconstructed from the public API, so use `/usage set <tokens>` if you need to reconcile the local counter with your CodeCraft dashboard.
+
+## Update
+
+```bash
+craftcode update
+```
+
+or:
+
+```bash
+npm install -g craftcode-codecraft@latest
 ```
 
 ## Development
@@ -160,14 +199,27 @@ node src/index.mjs --version
 
 Requires Node.js 20+.
 
+Repository docs:
+
+- [Command reference](docs/COMMANDS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+
 ## Security
 
-Please read [SECURITY.md](SECURITY.md) before reporting a vulnerability. Do not open public issues containing API keys, credentials, private source code or exploit details.
+Treat repositories, skills, plugins and MCP output as untrusted input. Do not commit API keys or OAuth credentials. Security-sensitive reports should use GitHub private vulnerability reporting rather than public issues.
 
-## Contributing
+See [SECURITY.md](SECURITY.md).
 
-Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+## Project status
+
+Craft Code is an independent open-source project and is evolving quickly. It is not affiliated with Anthropic, OpenAI, GitHub, Vercel, Supabase or CodeCraft unless explicitly stated by those projects.
+
+Issues and pull requests are welcome.
 
 ## License
 
-MIT © contributors. See [LICENSE](LICENSE).
+MIT © Craft Code contributors. See [LICENSE](LICENSE).
