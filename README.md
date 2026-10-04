@@ -118,7 +118,7 @@ Skills are indexed by name/description and loaded only when relevant, instead of
 
 Lifecycle hooks remain opt-in because installed plugins may execute local commands.
 
-### Web, repositories and MCP connectors
+### Web, repositories and connectors
 
 Use:
 
