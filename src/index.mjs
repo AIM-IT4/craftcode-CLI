@@ -13,7 +13,7 @@ import {TerminalTui} from './tui.mjs';
 import {SessionStore} from './sessions.mjs';
 import {FileReferenceIndex} from './file_refs.mjs';
 import {CheckpointManager} from './checkpoints.mjs';
-import {fmtTokens} from './ui.mjs';
+import {fmtTokens,providerStatusSummary} from './ui.mjs';
 import {MarketplaceManager} from './marketplace.mjs';
 import {AgentManager} from './agents.mjs';
 import {resolveProviderApiKey,saveProviderApiKey,clearProviderApiKey,maskKey,promptSecret,AUTH_FILE} from './auth.mjs';
@@ -176,7 +176,8 @@ async function main(){
   const currentStatus=async()=>{
     let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}
     const u=usage.snapshot(),ctx=session.contextStats(),connected=mcp.list().filter(x=>x.connected).map(x=>x.name),title=store.currentTitle||'Untitled session',rate=client.rateProfile();
-    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n- **Model:** \`${session.model}\`\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)} tokens · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Usage:** ${fmtTokens(u.total)} used · ${u.plan===Infinity?'Unlimited':fmtTokens(Math.max(0,u.plan-u.total))+' remaining'}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
+    const providerSummary=providerStatusSummary({providerLabel:providerConfig.label,providerId,model:session.model,usage:u,planSource:planResolved.source});
+    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n${providerSummary}\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)} tokens · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
   };
 
   const runOne=async(raw,{implementing=false}={})=>{

@@ -37,3 +37,13 @@ export function toolNotice(name, detail = '') {
 }
 export function warn(s) { console.log(color('yellow', `! ${s}`)); }
 export function error(s) { console.error(color('red', `✗ ${s}`)); }
+
+export function providerStatusSummary({providerLabel='Provider',providerId='',model='',usage={},planSource='auto'}={}){
+  const provider=`- **Provider:** **${providerLabel}**${providerId?` (\`${providerId}\`)`:''}`;
+  const modelLine=`- **Model:** \`${model||''}\``;
+  const total=fmtTokens(usage.total||0);
+  const usageLine=planSource==='observed'
+    ? `- **Usage:** ${total} used · provider plan not reported`
+    : `- **Usage:** ${total} used · ${usage.plan===Infinity?'Unlimited':fmtTokens(Math.max(0,(usage.plan||0)-(usage.total||0)))+' remaining'}`;
+  return [provider,modelLine,usageLine].join('\n');
+}

@@ -93,6 +93,7 @@ function migrateLegacyConfig(x={}) {
   const y={...x};
   // v0.5 wrote 100M as a generated default. It was not account-derived.
   if (!y.configVersion && y.planTokens === 100_000_000) delete y.planTokens;
+  if(y.baseUrl&&!y.providers?.codecraft?.baseUrl)y.providers={...(y.providers||{}),codecraft:{...(y.providers?.codecraft||{}),type:'codecraft',baseUrl:y.baseUrl}};
   return y;
 }
 export async function loadConfig(cwd) {
@@ -158,7 +159,7 @@ export function normalizeProviderConfig(config={}){
     openrouter:{type:'openrouter',baseUrl:'https://openrouter.ai/api/v1',apiKeyEnv:'OPENROUTER_API_KEY',appUrl:'https://github.com/AIM-IT4/craftcode-CLI',appName:'Craft Code'},
     ...(config.providers||{})
   };
-  if(config.baseUrl)providers.codecraft={...providers.codecraft,baseUrl:config.baseUrl};
+  if(config.baseUrl&&!config.providers?.codecraft?.baseUrl)providers.codecraft={...providers.codecraft,baseUrl:config.baseUrl};
   return{...config,provider,providers,model:config.model||''};
 }
 
