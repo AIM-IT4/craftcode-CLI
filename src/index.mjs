@@ -1,0 +1,300 @@
+#!/usr/bin/env node
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig} from './config.mjs';
+import {CodeCraftClient} from './codecraft.mjs';
+import {UsageTracker} from './usage.mjs';
+import {SkillRegistry} from './skills.mjs';
+import {PluginRegistry} from './plugins.mjs';
+import {McpManager} from './mcp.mjs';
+import {ToolRegistry} from './tools.mjs';
+import {AgentSession} from './agent.mjs';
+import {TerminalTui} from './tui.mjs';
+import {SessionStore} from './sessions.mjs';
+import {FileReferenceIndex} from './file_refs.mjs';
+import {CheckpointManager} from './checkpoints.mjs';
+import {fmtTokens} from './ui.mjs';
+import {MarketplaceManager} from './marketplace.mjs';
+import {AgentManager} from './agents.mjs';
+import {resolveApiKey,saveApiKey,clearApiKey,maskKey,promptSecret,AUTH_FILE} from './auth.mjs';
+import {spawn} from 'node:child_process';
+import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
+
+function parseArgs(){
+  const a=process.argv.slice(2);let yes=false,cwd=process.cwd(),resume=false,showSplash=true,doctor=false,version=false;
+  let action='',actionArg='',resumeRef='latest';
+  if(a[0]==='auth'){action='auth';actionArg=(a[1]||'status').toLowerCase();a.splice(0,2);}
+  else if(['update','upgrade'].includes(a[0])){action='update';a.splice(0,1);}
+  else if(['resume','continue'].includes((a[0]||'').toLowerCase())){resume=true;a.splice(0,1);}
+  for(let i=0;i<a.length;i++){
+    if(a[i]==='--yes'||a[i]==='-y')yes=true;
+    else if(a[i]==='--resume'||a[i]==='--continue'||a[i]==='-c')resume=true;
+    else if(a[i]==='--no-splash')showSplash=false;
+    else if(a[i]==='--doctor')doctor=true;
+    else if(a[i]==='--version'||a[i]==='-v')version=true;
+    else if(a[i].startsWith('--session=')){resume=true;resumeRef=a[i].slice(10)||'latest';}
+    else if(!a[i].startsWith('-'))cwd=path.resolve(a[i]);
+  }
+  return{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg};
+}
+
+async function runUpdate(){
+  console.log('Updating Craft Code from npm…');
+  const exe=process.platform==='win32'?'npm.cmd':'npm';
+  await new Promise((resolve,reject)=>{
+    const p=spawn(exe,['install','-g','craftcode-codecraft@latest'],{stdio:'inherit',shell:false});
+    p.on('error',reject);p.on('exit',c=>c===0?resolve():reject(new Error(`npm exited with code ${c}`)));
+  });
+  console.log('Craft Code updated. Run: craftcode --version');
+}
+
+async function handleAuth(actionArg){
+  if(actionArg==='login'){
+    const key=await promptSecret('CodeCraft API key');
+    if(!key)throw new Error('No API key entered.');
+    process.stdout.write('Validating with CodeCraft… ');
+    const probe=new CodeCraftClient({apiKey:key,baseUrl:'https://codecraftapi.com/v1',maxOutputTokens:8});
+    try{await probe.models();}catch(e){console.log('failed');throw new Error(`CodeCraft rejected the key: ${e.message}`);}
+    const file=await saveApiKey(key);console.log('ok');
+    console.log(`Saved for future sessions: ${file}`);
+    console.log('You can now run Craft Code from any terminal without setting CODECRAFT_API_KEY.');
+    return;
+  }
+  if(actionArg==='logout'){
+    await clearApiKey();console.log('Stored CodeCraft API key removed.');return;
+  }
+  const a=await resolveApiKey();
+  console.log(`CodeCraft auth: ${a.key?'configured':'not configured'}`);
+  console.log(`Source: ${a.source}`);
+  if(a.key)console.log(`Key: ${maskKey(a.key)}`);
+  console.log(`Credential file: ${AUTH_FILE}`);
+}
+function pickDefaultModel(ms,x){if(x)return x;const ids=ms.map(m=>m.id||m.name).filter(Boolean);return ids.find(x=>/opus/i.test(x))||ids[0]||'';}
+function pickSubagentModel(ms,main){const ids=ms.map(m=>m.id||m.name).filter(Boolean);return ids.find(x=>/sonnet/i.test(x))||ids.find(x=>x!==main)||main;}
+const PERMISSION_PRESETS={ask:{label:'Ask',write:'ask',shell:'ask',mcp:'ask'},edit:{label:'Edit',write:'allow',shell:'ask',mcp:'ask'},auto:{label:'Auto',write:'allow',shell:'allow',mcp:'allow'},locked:{label:'Read only',write:'deny',shell:'deny',mcp:'deny'}};
+function permissionPresetOf(p={}){return Object.entries(PERMISSION_PRESETS).find(([,v])=>v.write===p.write&&v.shell===p.shell&&(p.mcp??'ask')===v.mcp)?.[0]||'ask';}
+function activityForTool(x={}){const n=String(x.name||''),d=String(x.detail||'');if(n==='search_files')return 'Searching';if(n==='read_file'||n==='list_files')return 'Inspecting';if(n==='replace_in_file'||n==='write_file')return 'Editing';if(n==='run_command'){if(/(?:^|\s)(test|pytest|jest|vitest|mocha|cargo test|go test|npm test|pnpm test|yarn test)(?:\s|$)/i.test(d))return 'Testing';if(/build|compile|tsc|vite build|next build/i.test(d))return 'Building';return 'Running command';}if(n.startsWith('git_'))return 'Checking Git';if(n==='load_skill')return 'Loading skill';if(n.includes('mcp'))return 'Connecting';if(n==='update_todo')return 'Planning';return 'Working';}
+const table=(rows,cols)=>rows.map(r=>cols.map(([k,w])=>String(r[k]??'').slice(0,w).padEnd(w)).join('  ')).join('\n');
+const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+
+async function main(){
+  const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
+  if(version){console.log('Craft Code 0.9.0');return;}
+  if(action==='auth'){await handleAuth(actionArg);return;}
+  if(action==='update'){await runUpdate();return;}
+  if(doctor){
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.0');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+  }
+  try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
+  await writeStarterConfig();
+  const config=await loadConfig(cwd);
+  const auth=await resolveApiKey(),apiKey=auth.key;
+  if(!apiKey){console.error('No CodeCraft API key configured. Run: craftcode auth login');return;}
+  const client=new CodeCraftClient({apiKey,baseUrl:config.baseUrl,maxOutputTokens:config.maxOutputTokens});
+  let availableModels=[];try{availableModels=await client.models();}catch(e){console.error(`CodeCraft: ${e.message}`);return;}
+  let model=pickDefaultModel(availableModels,config.model);
+  if(!model)return console.error('No CodeCraft model available.');
+  const planResolved=resolvePlanTokens(config,client.planHint());
+  const usage=await new UsageTracker(planResolved.tokens,config.resetDay).load();
+  const marketplace=await new MarketplaceManager().scan();
+  const skills=await new SkillRegistry(cwd).scan();
+  const plugins=await new PluginRegistry(cwd,config.activePlugins,{allowClaudeHooks:config.claudePlugins?.allowHooks}).scan();
+  const mcp=new McpManager(config.mcpServers,config.connectorCatalog||{});
+  mcp.setPluginConfigs(await plugins.mcpServers());
+  const store=await new SessionStore(cwd).init();
+  const refs=new FileReferenceIndex(cwd,{ignore:config.ignore||[]});
+  const checkpoints=await new CheckpointManager(cwd).init();
+  try{await refs.scan();}catch{}
+  let projectInstructions=await loadProjectInstructions(cwd,config);
+
+  let mode=config.defaultMode||'build',effort=config.defaultEffort||'high',permissionPreset=permissionPresetOf(config.permissions),session,tui,stopping=false,processing=false;
+  const askFn=async q=>{const m=String(q).match(/^([^:]+):\s*(.*)$/s);return tui.askApproval((m?.[1]||'action').toLowerCase(),m?.[2]||q);};
+  const agents=new AgentManager({client,model:pickSubagentModel(availableModels,model),cwd,config,usage,skills,plugins,mcp,projectInstructions,events:{onChange:x=>tui?.setAgents(x)}});
+  const tools=new ToolRegistry({cwd,config,skills,plugins,mcp,agents,checkpoints,yes,onNotice:()=>{},onTodo:x=>tui?.setTodos(x),askFn});
+  const thinkingWords=['Thinking','Reasoning','Reviewing','Synthesizing'];
+  const events={
+    onTurnStart:()=>tui?.setBusy(true),
+    onThinking:x=>tui?.setActivity(thinkingWords[(x?.step||0)%thinkingWords.length]),
+    onText:t=>tui?.stream(t),
+    onUsage:u=>tui?.setMeta({requestUsage:u}),
+    onContext:n=>tui?.setMeta({contextChars:n}),
+    onWarn:s=>tui?.add('notice',s),
+    onToolStart:x=>{tui?.setActivity(activityForTool(x));return tui?.toolStart(x);},
+    onToolEnd:x=>{tui?.toolEnd(x);tui?.setActivity('Reviewing results');},
+    onCancelled:()=>tui?.add('notice','Turn cancelled. Completed edits remain available through /undo.'),
+    onCheckpoint:cp=>{tui?.setCheckpoint(cp.id);tui?.setNotice('Checkpoint ready · Undo available',1800);},
+    onTurnEnd:()=>tui?.setBusy(false)
+  };
+  client.onRateLimit=({retryMs,tpmLimit,tpmRemaining})=>{const secs=Math.max(1,Math.ceil(retryMs/1000));tui?.setActivity('Rate limit');tui?.setNotice(`TPM limit · retrying in ${secs}s${tpmLimit?` · ${fmtTokens(tpmRemaining||0)}/${fmtTokens(tpmLimit)} remaining`:''}`,Math.min(retryMs,10000));};
+  session=new AgentSession({client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,projectInstructions});
+  session.clear();
+  const startupHookContext=await plugins.hook('session.start',{cwd});if(startupHookContext?.length)session.setPluginContext(startupHookContext);
+
+  const save=async()=>store.save({messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort});
+  const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
+  const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
+  const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
+  const setModel=x=>{model=x;session.model=x;tui.setMeta({model:x});};
+  const setPermissions=preset=>{const p=PERMISSION_PRESETS[preset]||PERMISSION_PRESETS.ask;permissionPreset=preset in PERMISSION_PRESETS?preset:'ask';config.permissions.write=p.write;config.permissions.shell=p.shell;config.permissions.mcp=p.mcp;tui?.setMeta({permissionPreset});tui?.setNotice(`Permissions · ${p.label}`,1400);};
+  const cyclePermissions=()=>{const order=['ask','edit','auto','locked'],i=order.indexOf(permissionPreset);setPermissions(order[(i+1)%order.length]);};
+  const persistApproval=(kind,decision)=>{if(kind==='shell')config.permissions.shell=decision;if(kind==='write')config.permissions.write=decision;if(kind==='mcp')config.permissions.mcp=decision;permissionPreset=permissionPresetOf(config.permissions);tui?.setMeta({permissionPreset});};
+  const resumeSession=async(ref='latest')=>{
+    const s=await store.load(ref||'latest');if(!s){tui.add('notice','No matching saved session found.');return false;}
+    session.model=s.model||session.model;session.setMode(s.mode||'build');session.setEffort(s.effort||effort);session.restore(s.messages||[]);
+    model=session.model;mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({model,mode,effort,contextChars:session.contextChars()});tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
+  };
+  const currentStatus=async()=>{
+    let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}
+    const u=usage.snapshot(),ctx=session.contextStats(),connected=mcp.list().filter(x=>x.connected).map(x=>x.name),title=store.currentTitle||'Untitled session';
+    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n- **Model:** \`${session.model}\`\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)} tokens · ${ctx.messages} messages\n- **Usage:** ${fmtTokens(u.total)} used · ${u.plan===Infinity?'Unlimited':fmtTokens(Math.max(0,u.plan-u.total))+' remaining'}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
+  };
+
+  const runOne=async(raw,{implementing=false}={})=>{
+    if(processing)return;processing=true;
+    try{
+      const ex=await refs.expand(raw);
+      if(ex.refs.length)tui.setNotice(`Attached ${ex.refs.map(x=>'@'+x).join(', ')}`,1600);
+      for(const w of ex.warnings)tui.add('notice',w);
+      const r=await session.run(ex.prompt);await save();
+      if(!r.cancelled&&mode==='plan'&&!implementing){
+        const a=await tui.askPlanApproval();
+        if(a==='implement'){
+          setMode('build');tui.setNotice('Plan approved · Build mode',1500);tui.add('user','Implement the approved plan.');processing=false;
+          await runOne('Implement the approved plan above. Make focused changes and verify them.',{implementing:true});return;
+        }
+        if(a==='stay')tui.setNotice('Staying in Plan mode.');
+      }
+    }catch(e){tui.add('notice',e.message||String(e));tui.setBusy(false);}finally{processing=false;}
+    while(!processing&&tui.hasQueue()){const n=tui.dequeue();if(!n)break;tui.add('user',n);await runOne(n);}
+  };
+
+  const command=async line=>{
+    const parts=line.trim().split(/\s+/),cmd=(parts[0]||'').toLowerCase(),rest=parts.slice(1),arg=rest.join(' ');
+    try{
+      if(cmd==='/exit'||cmd==='/quit')return await exit();
+      if(cmd==='/help'){
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card · PgUp/PgDn scroll\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect opens OAuth MCP login. Shift+Tab cycles permission presets. Footer pills are clickable in Windows Terminal.');return;
+      }
+      if(cmd==='/mode'){
+        if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
+        const chosen=await tui.pickMode(mode);if(chosen){setMode(chosen);tui.setNotice(`Mode · ${chosen.toUpperCase()}`);}return;
+      }
+      if(cmd==='/effort'){
+        if(rest[0]&&['low','normal','high'].includes(rest[0].toLowerCase())){setEffort(rest[0].toLowerCase());return tui.setNotice(`Agent depth · ${rest[0]}`);}
+        const chosen=await tui.pickEffort(effort);if(chosen){setEffort(chosen);tui.setNotice(`Agent depth · ${chosen}`);}return;
+      }
+      if(cmd==='/models'||cmd==='/model'){
+        if(arg&&cmd==='/model'){setModel(arg);return tui.setNotice(`Model · ${arg}`);}
+        const ms=await client.models(),chosen=await tui.pickModel(ms,model);if(chosen){setModel(chosen);tui.setNotice(`Model · ${chosen}`);}return;
+      }
+      if(cmd==='/permissions'||cmd==='/permission'||cmd==='/perm'){
+        const aliases={ask:'ask',safe:'ask',edit:'edit',auto:'auto',allow:'auto',locked:'locked',readonly:'locked','read-only':'locked'};
+        if(rest[0]&&aliases[rest[0].toLowerCase()]){setPermissions(aliases[rest[0].toLowerCase()]);return;}
+        const chosen=await tui.pickPermissions(permissionPreset);if(chosen)setPermissions(chosen);return;
+      }
+      if(cmd==='/usage'){
+        if(rest[0]==='add'){await usage.seed(Number(rest[1]));return tui.setNotice('Usage seeded.');}
+        if(rest[0]==='set'){await usage.set(Number(rest[1]));return tui.setNotice('Usage reconciled.');}
+        if(rest[0]==='plan'){const n=parseTokenAmount(rest[1]);if(!n)return tui.add('notice','Use /usage plan 30m (or another token amount).');usage.planTokens=n;tui.setMeta({planTokens:n,planSource:'manual'});return tui.setNotice(`Plan display · ${fmtTokens(n)}`);}
+        tui.openUsage();return;
+      }
+      if(cmd==='/skills'){
+        await skills.scan();
+        if(rest[0]==='savings'){const x=skills.estimateSavings();tui.add('assistant',`Lazy skills: ${x.skills} discovered. Loading all of them would add roughly ${fmtTokens(x.fullLoadEstimatedTokens)} tokens; Craft Code sends only names/descriptions until load_skill is called.`);return;}
+        tui.add('assistant',skills.list().map(s=>`${s.name}${s.source?` [${s.source}]`:''} — ${s.description}`).join('\n')||'No skills found.');return;
+      }
+      if(cmd==='/plugins'){tui.add('assistant',plugins.list().map(p=>`${p.active?'●':'○'} ${p.name}${p.version?` ${p.version}`:''} [${p.type}] — ${p.description||''}`).join('\n')||'No plugins found.');return;}
+      if(cmd==='/plugin'){
+        const sub=(rest[0]||'').toLowerCase();
+        if(sub==='marketplace'&&rest[1]==='add'&&rest[2]){const r=await marketplace.add(rest.slice(2).join(' '));await marketplace.scan();return tui.add('assistant',`Marketplace ${r.name} added · ${r.plugins} plugin(s).`);}
+        if(sub==='marketplace'){const xs=marketplace.listMarketplaces();return tui.add('assistant',xs.map(x=>`${x.name} — ${x.plugins} plugins`).join('\n')||'No marketplaces configured.');}
+        if(sub==='install'&&rest[1]){const r=await marketplace.install(rest[1]);await skills.scan();await plugins.scan();mcp.setPluginConfigs(await plugins.mcpServers());tui.setExtraCommands(plugins.commands());return tui.add('assistant',`Installed ${r.name}${r.version?` ${r.version}`:''}. Skills and slash commands are available now.`);}
+        if(sub==='update'&&rest[1]){const r=await marketplace.update(rest[1]);await skills.scan();await plugins.scan();mcp.setPluginConfigs(await plugins.mcpServers());tui.setExtraCommands(plugins.commands());return tui.add('assistant',`Updated ${r.name}${r.version?` ${r.version}`:''}.`);}
+        if((sub==='remove'||sub==='uninstall')&&rest[1]){await marketplace.remove(rest[1]);await skills.scan();await plugins.scan();mcp.setPluginConfigs(await plugins.mcpServers());tui.setExtraCommands(plugins.commands());return tui.add('assistant',`Removed ${rest[1]}.`);}
+        if(sub==='available'){return tui.add('assistant',marketplace.available().map(x=>`${x.name}@${x.marketplace}${x.version?` ${x.version}`:''} — ${x.description}`).join('\n')||'No marketplace plugins discovered.');}
+        if(sub==='hooks'){const on=(rest[1]||'').toLowerCase()==='on';if(on&&!await tui.askApproval('shell','Enable installed Claude-plugin lifecycle hooks? Hooks can execute local commands.'))return tui.setNotice('Plugin hooks remain off.');plugins.setClaudeHooks(on);config.claudePlugins.allowHooks=on;if(on){const x=await plugins.hook('session.start',{cwd});if(x?.length)session.setPluginContext(x);}return tui.setNotice(`Claude plugin hooks · ${on?'ON (trusted plugins only)':'OFF'}`);}
+        if(arg){plugins.activate(arg);return tui.setNotice(`Activated plugin ${arg}`);}return command('/plugins');
+      }
+      if(cmd==='/mcp'){
+        if(rest[0]==='tools'&&rest[1]){const ts=await mcp.tools(rest[1]);tui.add('assistant',ts.map(t=>`${t.name} — ${t.description||''}`).join('\n')||'No tools.');}
+        else tui.add('assistant',mcp.list().map(x=>`${x.connected?'●':'○'} ${x.name} [${x.type}${x.oauth?' · OAuth':''}]`).join('\n')||'No MCP servers configured.');return;
+      }
+      if(cmd==='/connect'){
+        let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}tui.setNotice(`Opening ${name} authorization…`,0);await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);return;
+      }
+      if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
+      if(cmd==='/agents'){const xs=agents.list();tui.add('assistant',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
+      if(cmd==='/agent'){
+        const sub=(rest[0]||'').toLowerCase();if(sub==='spawn'){const role=(rest[1]||'explorer').toLowerCase(),task=rest.slice(2).join(' ');if(!task)return tui.add('notice','Use /agent spawn <explorer|tester|reviewer|researcher|writer> <task>.');const j=await agents.spawn({role,task,worktree:role==='writer'});tui.setNotice(`Spawned ${j.id}`);return;}if(sub==='show'&&rest[1]){const j=agents.list().find(x=>x.id===rest[1]);if(!j)return tui.add('notice','Unknown agent id.');return tui.add('assistant',`${j.id} · ${j.role} · ${j.status} · ${fmtTokens(j.used||0)}/${fmtTokens(j.budget)}\n\n${j.result||j.error||'Still working…'}`);}if(sub==='apply'&&rest[1]){if(!await tui.askApproval('write',`Apply patch from ${rest[1]} to main workspace?`))return;const r=await agents.apply(rest[1]);tui.add(r.ok?'assistant':'notice',r.message);return;}return command('/agents');
+      }
+      if(cmd==='/team'){
+        const n=/^\d+$/.test(rest[0]||'')?Math.max(1,Math.min(6,Number(rest.shift()))):Math.min(3,config.agents?.maxParallel||3),task=rest.join(' ');if(!task)return tui.add('notice','Use /team [1-6] <task>.');tui.setNotice(`Launching ${n} bounded subagents…`,0);const rs=await agents.team({task,count:n});tui.add('assistant',`Parallel agent results\n\n${agents.summary(rs)}`);tui.setNotice(`${n} agents completed`,1800);return;
+      }
+      if(cmd==='/bash'){if(!arg)return tui.add('notice','Use !<command> or /bash <command>.');const r=await tools.execute('run_command',{command:arg},mode);tui.add('assistant','```text\n'+String(r||'')+'\n```');return;}
+      if(cmd==='/diff'){const r=await tools.execute('git_diff',{staged:false},'plan');tui.add('assistant',r||'No diff.');return;}
+      if(cmd==='/checkpoints'){const cp=await checkpoints.latest();tui.add('assistant',cp?`Latest checkpoint\n${cp.id}\n${cp.createdAt}\n${Object.keys(cp.files||{}).length} direct file snapshot(s)${cp.shellTouched?'\nShell activity also tracked where Git can detect it.':''}`:'No checkpoint available.');return;}
+      if(cmd==='/undo'){
+        const cp=await checkpoints.latest();if(!cp)return tui.add('notice','No checkpoint available.');
+        if(!await tui.askApproval('undo',`Restore latest checkpoint ${cp.id}?`))return tui.setNotice('Undo cancelled.');
+        const r=await checkpoints.undoLatest();tui.add(r.ok?'assistant':'notice',r.message);if(r.ok)tui.setCheckpoint('');return;
+      }
+      if(cmd==='/compact')return tui.setNotice(`Context compacted · ${session.compact()} messages retained`);
+      if(cmd==='/clear'){session.clear();tui.replaceTranscript([]);tui.setTodos([]);return tui.setNotice('Conversation cleared.');}
+      if(cmd==='/sessions'){
+        const sub=(rest[0]||'').toLowerCase();
+        if(sub==='search'){const rows=await store.list({query:rest.slice(1).join(' ')});if(!rows.length)return tui.add('notice','No matching sessions.');const chosen=await tui.pickSession(rows);if(chosen)await resumeSession(chosen);return;}
+        if(sub==='delete'&&rest[1]){const id=await store.resolve(rest[1]);if(!id)return tui.add('notice','Session not found.');if(!await tui.askApproval('delete',`Delete saved session ${id}?`))return;await store.remove(id);return tui.setNotice('Session deleted.');}
+        const rows=await store.list();if(!rows.length)return tui.add('notice','No saved sessions yet.');const chosen=await tui.pickSession(rows);if(chosen)await resumeSession(chosen);return;
+      }
+      if(cmd==='/resume'){await resumeSession(arg||'latest');return;}
+      if(cmd==='/session'){
+        const sub=(rest[0]||'').toLowerCase();
+        if(sub==='name'||sub==='rename'){const title=rest.slice(1).join(' ');if(!title)return tui.add('notice','Use /session name <title>.');const x=await store.rename(store.currentId,title);return tui.setNotice(`Session named · ${x.title}`);}
+        if(sub==='fork'){await save();const x=await store.fork(rest[1]||store.currentId);if(!x)return tui.add('notice','Session not found.');await resumeSession(x.id);return tui.setNotice(`Forked · ${x.title}`);}
+        if(sub==='export'){await save();const file=await store.exportMarkdown(rest[1]||store.currentId,rest.slice(2).join(' ')||'');return tui.add('assistant',file?`Session exported to \`${file}\``:'Session not found.');}
+        if(sub==='delete'){const ref=rest[1]||store.currentId,id=await store.resolve(ref);if(!id)return tui.add('notice','Session not found.');if(!await tui.askApproval('delete',`Delete saved session ${id}?`))return;await store.remove(id);session.clear();tui.replaceTranscript([]);return tui.setNotice('Session deleted · started fresh.');}
+        return tui.add('assistant',`Current session: **${store.currentTitle||'Untitled session'}**\n\`${store.currentId}\`\n\nCommands: /session name <title> · /session fork · /session export · /session delete`);
+      }
+      if(cmd==='/new'){await save();store.fresh();session.clear();tui.replaceTranscript([]);tui.setTodos([]);tui.setCheckpoint('');return tui.setNotice('Fresh session.');}
+      if(cmd==='/status'){tui.add('assistant',await currentStatus());return;}
+      if(cmd==='/context'){const x=session.contextStats();tui.add('assistant',`# Context\n\n- Estimated tokens: **${fmtTokens(x.estimatedTokens)}**\n- Messages: ${x.messages}\n- System/instructions: ~${fmtTokens(Math.ceil(x.systemChars/4))}\n- User: ~${fmtTokens(Math.ceil(x.userChars/4))}\n- Assistant: ~${fmtTokens(Math.ceil(x.assistantChars/4))}\n- Tool results: ~${fmtTokens(Math.ceil(x.toolChars/4))}\n\nUse /compact when old conversation history is no longer useful.`);return;}
+      if(cmd==='/instructions'){
+        if((rest[0]||'').toLowerCase()==='reload'){projectInstructions=await loadProjectInstructions(cwd,config);session.setProjectInstructions(projectInstructions);agents.projectInstructions=projectInstructions;return tui.setNotice(`Reloaded ${projectInstructions.length} instruction file(s).`);}
+        tui.add('assistant',projectInstructions.length?projectInstructions.map(x=>`## ${x.file}\n\n${x.text}`).join('\n\n'):'No AGENTS.md / CLAUDE.md project instructions found. Use /init to create AGENTS.md.');return;
+      }
+      if(cmd==='/init'){
+        if(!await tui.askApproval('write','Create a starter AGENTS.md in this workspace?'))return;
+        const r=await initAgentsFile(cwd);if(!r.created)return tui.add('notice','AGENTS.md already exists; left unchanged.');projectInstructions=await loadProjectInstructions(cwd,config);session.setProjectInstructions(projectInstructions);agents.projectInstructions=projectInstructions;return tui.add('assistant',`Created \`${r.file}\`. Edit it with your project commands and conventions; Craft Code now loads it automatically.`);
+      }
+      if(cmd==='/settings'){
+        const key=(rest[0]||'').toLowerCase();if(key==='autoresume'||key==='auto-resume'){const v=(rest[1]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /settings autoresume on|off.');config.sessions=config.sessions||{};config.sessions.autoResume=v==='on';const f=await updateProjectConfig(cwd,{sessions:{autoResume:v==='on'}});return tui.setNotice(`Auto-resume ${v} · ${f}`,2200);}return tui.add('assistant',`Workspace settings\n\n- Auto-resume: **${config.sessions?.autoResume?'on':'off'}**\n- Autosave: **${config.sessions?.autosave!==false?'on':'off'}**\n- Project config: \`${path.join(cwd,'.craftcli','config.json')}\``);
+      }
+      if(cmd==='/config')return tui.add('assistant',GLOBAL_CONFIG);
+      const pluginCmd=plugins.expandCommand(cmd.slice(1),arg);if(pluginCmd){tui.add('user',cmd+(arg?` ${arg}`:''));await runOne(pluginCmd.prompt);return;}
+      tui.add('notice',`Unknown command · ${cmd}`);
+    }catch(e){tui.add('notice',e.message||String(e));}finally{tui.setBusy(false);}
+  };
+
+  const quickAction=async action=>{
+    if(!action)return;
+    if(action==='attach'){tui.input=tui.input.slice(0,tui.cursor)+'@'+tui.input.slice(tui.cursor);tui.cursor++;tui.schedule();return;}
+    if(action==='connectors')return command('/connect');
+    if(action==='agents')return command('/agents');
+    if(action==='skills')return command('/skills');
+    if(action==='plugins')return command('/plugins');
+    if(action==='compact')return command('/compact');
+    if(action==='new')return command('/new');
+  };
+
+  tui=new TerminalTui({
+    cwd,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,
+    onSubmit:runOne,onCommand:command,onCancel:()=>session.cancel(),onExit:exit,fileRefs:refs,showSplash,
+    onModelsRequest:()=>client.models(),onModelPick:setModel,onModePick:setMode,onEffortPick:setEffort,onPermissionPick:setPermissions,onPermissionCycle:cyclePermissions,onPermissionDecision:persistApproval,onQuickAction:quickAction,
+    startupMeta:{skills:skills.list().length,plugins:plugins.list().length,mcp:mcp.list().length,planName:client.planHint()?.name||'',rpm:client.rateLimits.rpmLimit||0}
+  });
+  tui.setExtraCommands(plugins.commands());tui.setAgents(agents.list());
+  process.on('SIGINT',exit);process.on('SIGTERM',exit);process.on('uncaughtException',e=>{try{tui?.stop();}catch{}console.error(e);process.exit(1);});
+  tui.start();
+  if(resume||config.sessions?.autoResume){await resumeSession(resumeRef||'latest');}
+}
+main().catch(e=>{console.error(e?.stack||e);process.exitCode=1;});
