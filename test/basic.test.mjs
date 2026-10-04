@@ -197,3 +197,10 @@ test('TUI suppresses duplicate notice spam within a short window',()=>{
   tui.add('notice','Connection failed');
   assert.equal(tui.transcript.filter(x=>x.role==='notice').length,1);
 });
+
+
+test('package exposes both executable CLI bins', async()=>{
+  const pkg=JSON.parse(await fs.readFile(new URL('../package.json',import.meta.url),'utf8'));
+  assert.equal(pkg.bin.craftcode,'src/index.mjs');
+  assert.equal(pkg.bin.craftcli,'src/index.mjs');
+});
