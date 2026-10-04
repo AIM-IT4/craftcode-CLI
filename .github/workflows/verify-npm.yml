@@ -1,0 +1,26 @@
+name: Verify npm release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-npm.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@latest
+      - name: Query npm registry
+        run: |
+          npm view craftcode-codecraft versions --json
+          npm view craftcode-codecraft dist-tags --json
+          npm view craftcode-codecraft@0.9.2 version
