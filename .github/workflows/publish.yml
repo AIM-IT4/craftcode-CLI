@@ -26,8 +26,9 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
-      - name: Use current npm with trusted publishing support
+      - name: Use current npm
         run: npm install --global npm@latest
 
       - name: Install dependencies
@@ -39,5 +40,18 @@ jobs:
       - name: Verify package
         run: npm pack --dry-run
 
+      - name: Check repository npm credential
+        shell: bash
+        env:
+          NPM_TOKEN: "${{ secrets.NPM_TOKEN }}"
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "Repository NPM_TOKEN is configured."
+          else
+            echo "Repository NPM_TOKEN is not configured; npm will try trusted publishing (OIDC)."
+          fi
+
       - name: Publish with provenance
+        env:
+          NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}"
         run: npm publish --access public --provenance
