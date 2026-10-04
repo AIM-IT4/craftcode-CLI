@@ -109,7 +109,7 @@ export class TerminalTui{
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
     this.fileSuggestionIndex=0;this.commandSelection=0;this.toolSelection=null;this.spinnerIndex=0;
     this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;
-    this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];
+    this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;
     this._data=b=>this.handleData(String(b));this._resize=()=>{this.prevLines=[];this.render();};
   }
   start(){
@@ -140,7 +140,7 @@ export class TerminalTui{
   setAgents(x=[]){this.agents=(x||[]).slice(-8);this.schedule();}
   setExtraCommands(x=[]){this.extraCommands=(x||[]).map(c=>({cmd:c.cmd,desc:c.desc||'Plugin command'}));this.schedule();}
   setCheckpoint(x){this.lastCheckpoint=x||'';this.schedule();}
-  add(role,text,meta={}){this.transcript.push({role,text:String(text??''),...meta});if(this.transcript.length>450)this.transcript=this.transcript.slice(-450);this.scrollOffset=0;this.schedule();}
+  add(role,text,meta={}){const value=String(text??'');if(role==='notice'){const key=value.trim().toLowerCase(),now=Date.now();if(key&&key===this.lastNoticeKey&&now-this.lastNoticeAt<5000)return;this.lastNoticeKey=key;this.lastNoticeAt=now;}this.transcript.push({role,text:value,...meta});if(this.transcript.length>450)this.transcript=this.transcript.slice(-450);this.scrollOffset=0;this.schedule();}
   beginAssistant(){/* streaming creates its own assistant block on first text */}
   stream(t){let x=this.transcript.at(-1);if(!x||x.role!=='assistant'){x={role:'assistant',text:''};this.transcript.push(x);}x.text+=t;this.schedule();}
   replaceTranscript(x=[]){this.transcript=x.map(m=>({...m,text:String(m.text??'')}));this.schedule();}
@@ -156,7 +156,7 @@ export class TerminalTui{
   pickEffort(current=this.effort){return this.openPicker('effort','Agent depth',[{id:'low',label:'Low',meta:'fast · fewer tool loops'},{id:'normal',label:'Normal',meta:'balanced'},{id:'high',label:'High',meta:'deeper verification'}],current);}
   pickPermissions(current=this.permissionPreset){return this.openPicker('permissions','Permissions',[{id:'ask',label:'Ask',meta:'ask before edits · commands · MCP actions'},{id:'edit',label:'Edit',meta:'allow edits · ask commands/MCP'},{id:'auto',label:'Auto',meta:'allow edits · commands · MCP actions'},{id:'locked',label:'Read only',meta:'deny edits · commands · MCP actions'}],current);}
   pickSession(rows=[]){return this.openPicker('session','Resume session',rows.map(x=>({id:x.id,label:x.title||x.id,meta:`${x.turns} turns · ${x.mode} · ${String(x.updatedAt||'').slice(0,16).replace('T',' ')}`})),rows[0]?.id||'');}
-  pickConnector(items=[]){return this.openPicker('connector','Connect service',(items||[]).map(x=>({id:x.name,label:x.name,meta:`${x.connected?'connected':'not connected'} · ${x.oauth?'browser OAuth':x.type}`})));}
+  pickConnector(items=[]){return this.openPicker('connector','Connect service',(items||[]).map(x=>({id:x.name,label:x.name,meta:x.connected?'connected':`${x.oauth||x.browserOAuth?'browser OAuth':x.type}${x.requirement?` · needs ${x.requirement}`:''}`})));}
   openQuickActions(){return this.openPicker('quick','Add to prompt',[{id:'attach',label:'Attach file',meta:'insert @ and search workspace'},{id:'connectors',label:'Connectors',meta:'OAuth / MCP servers'},{id:'agents',label:'Agents',meta:'parallel bounded workers'},{id:'skills',label:'Skills',meta:'reusable workflows'},{id:'plugins',label:'Plugins',meta:'extensions'},{id:'compact',label:'Compact context',meta:'save tokens'},{id:'new',label:'New session',meta:'clear current conversation'}]);}
   openPicker(type,title,items,current){return new Promise(resolve=>{this.modal={type,title,items,index:Math.max(0,items.findIndex(x=>x.id===current)),filter:'',resolve};this.schedule();});}
   openUsage(){this.modal={type:'usage',title:'Usage',resolve:()=>{}};this.schedule();}
