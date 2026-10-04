@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.5
+
+- Replaced unsupported direct Vercel MCP OAuth with Vercel's supported CLI device-login flow for `/connect vercel`.
+- Craft Code now verifies Vercel authentication with `vercel whoami` and uses the CLI session instead of generating an unapproved MCP OAuth client/redirect URI.
+- Added a first-class `vercel_api` agent tool that calls Vercel REST endpoints through the authenticated Vercel CLI; write requests remain behind Craft Code permissions.
+- Vercel execution uses `npx -y vercel@latest`, so a global Vercel installation is not required.
+
 ## 0.9.4
 
 - Native terminal drag-selection and Ctrl+C copying are enabled by default; mouse capture is opt-in with `/mouse on`.
