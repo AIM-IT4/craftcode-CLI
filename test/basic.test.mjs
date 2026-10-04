@@ -512,3 +512,10 @@ test('doctor is provider-aware and does not call removed single-provider auth pa
   assert.match(stdout,/Craft Code 0\.10\.0/);
   assert.match(stdout,/Provider:/);
 });
+
+
+test('explicit provider login activates that provider while plain login preserves selection',async()=>{
+  const {providerLoginPatch}=await import('../src/config.mjs');
+  assert.deepEqual(providerLoginPatch('openrouter','openrouter'),{provider:'openrouter'});
+  assert.equal(providerLoginPatch('','codecraft'),null);
+});
