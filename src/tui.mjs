@@ -318,17 +318,17 @@ export class TerminalTui{
   }
   renderWelcome(){
     const cols=Math.max(70,process.stdout.columns||110),rows=Math.max(24,process.stdout.rows||32),w=Math.min(82,cols-8),left=Math.max(2,Math.floor((cols-w)/2)),pad=s=>' '.repeat(left)+s,u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total);
-    const title='CRAFT CODE';const lines=['','',pad(`${paint('orange','✦')} ${paint('bold',title)} ${paint('dim','· provider-agnostic coding agent')}`),'',pad(paint('orange','╭'+'─'.repeat(w-2)+'╮')),pad(paint('orange','│')+` ${paint('bold','Workspace')}  ${crop(this.cwd,w-16)}`+' '.repeat(Math.max(0,w-4-width(`Workspace  ${crop(this.cwd,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Provider')}   ${paint('cyan',crop(this.provider,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Provider   ${crop(this.provider,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Model')}      ${paint('orange2',crop(this.model,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Model      ${crop(this.model,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Plan')}       ${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`+' '.repeat(Math.max(0,w-4-width(`Plan       ${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`)))+paint('orange','│')),pad(paint('orange','╰'+'─'.repeat(w-2)+'╯')),'',pad(`${paint('dim','Skills')} ${this.startupMeta?.skills||0}   ${paint('dim','Plugins')} ${this.startupMeta?.plugins||0}   ${paint('dim','MCP')} ${this.startupMeta?.mcp||0}`),'',pad(paint('dim','Review file edits and shell approvals. Use trusted repos, skills, plugins and connectors.')),'',pad(`${paint('blue',paint('bold','Enter'))} ${paint('dim','continue')}   ${paint('dim','·')}   ${paint('dim','Q quit')}`)];
+    const title='CRAFT CODE',planText=this.planSource==='observed'?'provider limit not reported':`${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`;const lines=['','',pad(`${paint('orange','✦')} ${paint('bold',title)} ${paint('dim','· provider-agnostic coding agent')}`),'',pad(paint('orange','╭'+'─'.repeat(w-2)+'╮')),pad(paint('orange','│')+` ${paint('bold','Workspace')}  ${crop(this.cwd,w-16)}`+' '.repeat(Math.max(0,w-4-width(`Workspace  ${crop(this.cwd,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Provider')}   ${paint('cyan',crop(this.provider,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Provider   ${crop(this.provider,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Model')}      ${paint('orange2',crop(this.model,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Model      ${crop(this.model,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Plan')}       ${planText}`+' '.repeat(Math.max(0,w-4-width(`Plan       ${planText}`)))+paint('orange','│')),pad(paint('orange','╰'+'─'.repeat(w-2)+'╯')),'',pad(`${paint('dim','Skills')} ${this.startupMeta?.skills||0}   ${paint('dim','Plugins')} ${this.startupMeta?.plugins||0}   ${paint('dim','MCP')} ${this.startupMeta?.mcp||0}`),'',pad(paint('dim','Review file edits and shell approvals. Use trusted repos, skills, plugins and connectors.')),'',pad(`${paint('blue',paint('bold','Enter'))} ${paint('dim','continue')}   ${paint('dim','·')}   ${paint('dim','Q quit')}`)];
     while(lines.length<rows)lines.push('');this.paintFrame(lines.slice(0,rows),cols);
   }
   overlay(w){
     if(this.modal?.type==='usage'){
-      const u=this.usage.snapshot(),usedPct=u.plan?Math.round(u.total/u.plan*100):0,rem=Math.max(0,u.plan-u.total),today=u.daily?.[dayKey()]||0;
+      const u=this.usage.snapshot(),observed=this.planSource==='observed',usedPct=observed?0:u.plan?Math.round(u.total/u.plan*100):0,rem=Math.max(0,u.plan-u.total),today=u.daily?.[dayKey()]||0;
       return[
         paint('orange','╭─ Usage '+ '─'.repeat(Math.max(1,w-10))+'╮'),
-        ` ${paint('bold',`${usedPct}% used`)}   ${fmtPlan(rem)} left / ${fmtPlan(u.plan)}   ${paint('dim',`reset in ${daysUntilReset(this.resetDay)}`)}`,
+        observed?` ${paint('bold','Observed usage')}   ${fmtTokens(u.total)} tracked locally   ${paint('dim','provider plan not reported')}`:` ${paint('bold',`${usedPct}% used`)}   ${fmtPlan(rem)} left / ${fmtPlan(u.plan)}   ${paint('dim',`reset in ${daysUntilReset(this.resetDay)}`)}`,
         ` Today ${paint('blue',fmtTokens(today))}   Session ${paint('cyan',fmtTokens(u.session))}   Context ~${paint('violet',fmtTokens(Math.ceil(this.contextChars/4)))}`,
-        ` Tier ${paint('green',this.startupMeta?.planName||fmtPlan(u.plan))}${this.startupMeta?.rpm?paint('dim',` · ${this.startupMeta.rpm} RPM detected`):paint('dim',` · ${this.planSource}`)}   ${paint('dim','usage counter is local to Craft Code')}`, 
+        observed?` Provider ${paint('green',this.provider)}   ${paint('dim','usage counter is local to Craft Code')}`:` Tier ${paint('green',this.startupMeta?.planName||fmtPlan(u.plan))}${this.startupMeta?.rpm?paint('dim',` · ${this.startupMeta.rpm} RPM detected`):paint('dim',` · ${this.planSource}`)}   ${paint('dim','usage counter is local to Craft Code')}`, 
         ` Request ${this.requestUsage?`↑ ${fmtTokens(this.requestUsage.prompt_tokens||0)}   ↓ ${fmtTokens(this.requestUsage.completion_tokens||0)}`:'—'}`,
         ` ${paint('dim','Enter / Esc close · /usage set <tokens> used · /usage plan 30m overrides tier')}`,
         paint('orange','╰'+'─'.repeat(w-2)+'╯')
@@ -374,7 +374,7 @@ export class TerminalTui{
       if(i<items.length-1){const d=divider();line+=d;x+=width(d);}
     }
     const right=[
-      {text:chip(crop(this.model,18),{tone:'orange',icon:'◐'}),action:'model'},
+      {text:chip(crop(`${this.provider}/${this.model}`,22),{tone:'orange',icon:'◐'}),action:'model'},
       {text:chip(this.effort[0].toUpperCase()+this.effort.slice(1),{tone:'violet'}),action:'effort'}
     ];
     if(this.lastCheckpoint)right.push({text:chip('Undo',{tone:'yellow',icon:'↶'}),action:'undo'});
@@ -389,8 +389,8 @@ export class TerminalTui{
     return fit(line+' '.repeat(space)+rightText,w);
   }
   usageLine(w,y){
-    const u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total),pct=u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0,ctx=fmtTokens(Math.ceil(this.contextChars/4));
-    const plan=u.plan===Infinity?'Unlimited':`${pct}% · ${fmtPlan(rem)} left`;
+    const u=this.usage.snapshot(),observed=this.planSource==='observed',rem=Math.max(0,u.plan-u.total),pct=observed?0:u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0,ctx=fmtTokens(Math.ceil(this.contextChars/4));
+    const plan=observed?`Observed ${fmtTokens(u.total)}`:u.plan===Infinity?'Unlimited':`${pct}% · ${fmtPlan(rem)} left`;
     const parts=[
       chip(plan,{tone:pct>=90?'red':pct>=70?'yellow':'green',icon:'◔'}),
       chip(`Today ${fmtTokens(today)}`,{tone:'blue',icon:'◷'}),
@@ -405,7 +405,7 @@ export class TerminalTui{
     const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=Math.max(68,cols-3);
     this.regions=[];
     const workspace=crop(path.basename(this.cwd),32),header=`  ${paint('orange','✦')} ${paint('bold','Craft Code')} ${paint('dim','·')} ${paint('slate',workspace)}`;
-    const right=this.notice?paint('yellow',crop(this.notice,42)):paint('dim','CodeCraft');
+    const right=this.notice?paint('yellow',crop(this.notice,42)):paint('dim',crop(this.provider||'provider',20));
     const headSpace=Math.max(1,w-width(header)-width(right));
     const top=fit(header+' '.repeat(headSpace)+right,w);
     let body=this.transcriptLines(w-4);

@@ -98,11 +98,11 @@ async function vercelInteractiveLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.9.9');return;}
+  if(version){console.log('Craft Code 0.10.0');return;}
   if(action==='auth'){await handleAuth(actionArg,actionProvider,cwd);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.9');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.10.0');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -149,7 +149,7 @@ async function main(){
   session.clear();
   const startupHookContext=await plugins.hook('session.start',{cwd});if(startupHookContext?.length)session.setPluginContext(startupHookContext);
 
-  const save=async()=>store.save({messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort});
+  const save=async()=>store.save({provider:providerId,messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort});
   const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
   const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
   const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
@@ -167,8 +167,10 @@ async function main(){
   const persistApproval=(kind,decision)=>{if(kind==='shell')config.permissions.shell=decision;if(kind==='write')config.permissions.write=decision;if(kind==='mcp')config.permissions.mcp=decision;permissionPreset=permissionPresetOf(config.permissions);tui?.setMeta({permissionPreset});};
   const resumeSession=async(ref='latest')=>{
     const s=await store.load(ref||'latest');if(!s){tui.add('notice','No matching saved session found.');return false;}
-    session.model=s.model||session.model;session.setMode(s.mode||'build');session.setEffort(s.effort||effort);session.restore(s.messages||[]);
-    model=session.model;mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({model,mode,effort,contextChars:session.contextChars()});tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
+    const savedProvider=s.provider||'codecraft';if(savedProvider!==providerId)await setProvider(savedProvider);
+    if(s.model){const exists=availableModels.some(m=>(m.id||m.name)===s.model);if(exists)setModel(s.model);else tui.add('notice',`Saved model ${s.model} is not available from ${providerConfig.label}; using ${model}.`);}
+    session.setMode(s.mode||'build');session.setEffort(s.effort||effort);session.restore(s.messages||[]);
+    mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({provider:providerId,model,mode,effort,contextChars:session.contextChars()});tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
   };
   const currentStatus=async()=>{
     let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}

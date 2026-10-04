@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./assets/craftcode-banner.svg" alt="Craft Code — CodeCraft-native terminal coding agent" width="100%" />
+<img src="./assets/craftcode-banner.svg" alt="Craft Code — provider-agnostic terminal coding agent" width="100%" />
 
 <br />
 
@@ -10,7 +10,7 @@
 [![Node.js 20+](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![npm downloads](https://img.shields.io/npm/dm/craftcode-codecraft?style=flat-square&color=6f7bf7)](https://www.npmjs.com/package/craftcode-codecraft)
 
-**A CodeCraft-native coding & research agent for your terminal.**
+**A provider-agnostic coding & research agent for your terminal — CodeCraft, OpenRouter, and OpenAI-compatible APIs.**
 
 Full-screen TUI · persistent sessions · parallel subagents · skills · Claude-style plugins · MCP/OAuth connectors · explicit permissions · token-aware execution
 
@@ -24,11 +24,12 @@ Full-screen TUI · persistent sessions · parallel subagents · skills · Claude
 
 ```bash
 npm install -g craftcode-codecraft
-craftcode auth login
+craftcode auth login                 # CodeCraft (backward-compatible default)
+craftcode auth login openrouter      # or use OpenRouter
 craftcode .
 ```
 
-Authenticate once, then use Craft Code from any terminal. Your CodeCraft key is stored under your user profile, never inside the repository.
+Authenticate once, then use Craft Code from any terminal. Provider keys are stored under your user profile, never inside the repository. `CODECRAFT_API_KEY` and `OPENROUTER_API_KEY` are also supported and take precedence over stored keys.
 
 ```bash
 # Windows
@@ -60,9 +61,49 @@ Most coding agents hide at least one important thing: context growth, permission
 | Plugins | Claude-style marketplaces, commands, skills and opt-in lifecycle hooks |
 | Connectors | MCP over stdio/HTTP with OAuth support where available |
 | Safety | Ask/Edit/Auto/Read-only permission presets, checkpoints and undo |
-| Tokens | Per-request/session/day/plan accounting, lazy schemas and CodeCraft 429 retry handling |
+| Providers | CodeCraft, OpenRouter, and configurable OpenAI-compatible endpoints behind one agent runtime |
+| Tokens | Per-request/session/day accounting, lazy schemas, provider rate metadata when available, and bounded retry handling |
 
 ## What you get
+
+### Providers
+
+```text
+/providers
+/provider
+/provider codecraft
+/provider openrouter
+/model
+```
+
+OpenRouter setup:
+
+```bash
+craftcode auth login openrouter
+craftcode .
+# then inside Craft Code:
+/provider openrouter
+/model
+```
+
+For a custom OpenAI-compatible endpoint, add a provider to `~/.craftcli/config.json` or the workspace `.craftcli/config.json`:
+
+```json
+{
+  "provider": "local",
+  "providers": {
+    "local": {
+      "type": "openai-compatible",
+      "baseUrl": "http://localhost:11434/v1",
+      "auth": false
+    }
+  }
+}
+```
+
+For an authenticated custom endpoint, set `apiKeyEnv` (for example `MY_GATEWAY_API_KEY`) or run `craftcode auth login <provider-id>`.
+
+CodeCraft remains the default for legacy installations and existing configs/sessions.
 
 ### Professional terminal workflow
 
@@ -172,10 +213,10 @@ Craft Code was built to avoid common agent-token waste:
 - context compaction;
 - per-agent budgets and TPM-aware parallelism;
 - visible request/session/day/month usage;
-- adaptive CodeCraft TPM pacing using live rate-limit headers, `Retry-After`/reset-aware retries, and TPM-aware subagent concurrency.
+- adaptive TPM pacing when the active provider exposes live token-rate headers, `Retry-After`/reset-aware retries, and TPM-aware subagent concurrency.
 
 > [!IMPORTANT]
-> The plan allowance shown in Craft Code is inferred from CodeCraft rate-limit metadata when possible. Historical usage outside Craft Code cannot be reconstructed from the public API, so use `/usage set <tokens>` if you need to reconcile the local counter with your CodeCraft dashboard.
+> CodeCraft plan allowance is inferred from CodeCraft rate-limit metadata when possible. For providers such as OpenRouter or custom endpoints where Craft Code does not have reliable plan metadata, the UI shows observed local usage instead of claiming an unlimited plan.
 
 ## Update
 

@@ -13,10 +13,14 @@ AgentSession ─── ToolRegistry ─── filesystem / shell / Git
     │                  ├── MCP connectors (lazy tool discovery)
     │                  └── Subagents / worktrees
     ▼
-CodeCraftClient
+ProviderRegistry
     │
-    ▼
-CodeCraft /v1/chat/completions
+    ├── CodeCraftClient
+    ├── OpenRouterClient
+    └── OpenAICompatibleClient
+            │
+            ▼
+      configured provider API
 ```
 
 ## Design priorities
@@ -26,3 +30,10 @@ CodeCraft /v1/chat/completions
 3. **Recoverability** — sessions persist and build-mode changes create checkpoints for undo.
 4. **Extensibility** — skills, plugins and MCP stay outside the core inference client.
 5. **General-purpose use** — no project-specific behavior is hard-coded into the agent.
+
+
+## Provider boundary
+
+`AgentSession` depends on a normalized provider client contract: model discovery, streaming assistant/tool-call messages, optional capability metadata, and optional rate metadata. Provider-specific authentication, headers, plan hints, and API quirks stay under `src/providers/`.
+
+Credentials are provider-scoped in `~/.craftcli/auth.json`; legacy `codecraftApiKey` credentials remain readable. OpenRouter uses its OpenAI-compatible `/api/v1` interface, while custom providers can supply any compatible base URL.

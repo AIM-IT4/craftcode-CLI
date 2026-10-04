@@ -10,10 +10,22 @@
 - `/session delete`
 - `/new`
 
+## Providers and models
+
+- `/providers` — show configured providers and authentication status
+- `/provider` — provider picker
+- `/provider <id>` — switch provider and refresh its model catalog
+- `/model` — model picker for the active provider
+
+CLI authentication:
+
+- `craftcode auth status [provider]`
+- `craftcode auth login [provider]`
+- `craftcode auth logout [provider]`
+
 ## Agent controls
 
 - `/mode` — Plan / Build picker
-- `/model` — model picker
 - `/effort` — Low / Normal / High
 - `/permissions` — permission preset picker
 - `/agents`
