@@ -105,11 +105,11 @@ async function vercelInteractiveLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
-  if(version){console.log('Craft Code 0.9.7');return;}
+  if(version){console.log('Craft Code 0.9.8');return;}
   if(action==='auth'){await handleAuth(actionArg);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.7');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.8');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();

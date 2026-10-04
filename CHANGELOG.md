@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.8
+
+- Fixed mouse-wheel transcript scrolling in Windows Terminal native-selection mode.
+- When mouse capture is off, Craft Code now enables DEC Alternate Scroll Mode so wheel events are translated into Up/Down sequences; those sequences already map to transcript scrolling rather than prompt history.
+- When `/mouse on` is enabled, Craft Code disables Alternate Scroll Mode and uses SGR mouse-wheel events directly.
+- Switching back with `/mouse off` restores native text selection plus working wheel scrolling.
+
 ## 0.9.7
 
 - Fixed mouse-wheel scrolling on Windows Terminal and other alternate-screen terminals where wheel motion was being translated into Up/Down keystrokes and changing the prompt/history.

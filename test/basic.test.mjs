@@ -313,13 +313,13 @@ test('subagent parallelism adapts to TPM ceiling',()=>{
 });
 
 
-test('terminal startup disables alternate-scroll wheel-to-arrow translation',()=>{
+test('terminal startup enables alternate-scroll wheel-to-arrow translation in native-selection mode',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});
   const oldInTTY=process.stdin.isTTY,oldOutTTY=process.stdout.isTTY,oldRaw=process.stdin.setRawMode,oldResume=process.stdin.resume,oldOn=process.stdin.on,oldWrite=process.stdout.write,oldOutOn=process.stdout.on;
   let out='';
   Object.defineProperty(process.stdin,'isTTY',{value:true,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:true,configurable:true});
   process.stdin.setRawMode=()=>{};process.stdin.resume=()=>{};process.stdin.on=()=>{};process.stdout.on=()=>{};process.stdout.write=s=>{out+=String(s);return true;};
-  tui.render=()=>{};try{tui.start();assert.match(out,/\x1b\[\?1007l/);}finally{clearInterval(tui._tick);tui.running=false;process.stdin.setRawMode=oldRaw;process.stdin.resume=oldResume;process.stdin.on=oldOn;process.stdout.on=oldOutOn;process.stdout.write=oldWrite;Object.defineProperty(process.stdin,'isTTY',{value:oldInTTY,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:oldOutTTY,configurable:true});}
+  tui.render=()=>{};try{tui.start();assert.match(out,/\x1b\[\?1007h/);}finally{clearInterval(tui._tick);tui.running=false;process.stdin.setRawMode=oldRaw;process.stdin.resume=oldResume;process.stdin.on=oldOn;process.stdout.on=oldOutOn;process.stdout.write=oldWrite;Object.defineProperty(process.stdin,'isTTY',{value:oldInTTY,configurable:true});Object.defineProperty(process.stdout,'isTTY',{value:oldOutTTY,configurable:true});}
 });
 
 test('plain up/down scroll transcript instead of mutating prompt history',()=>{
@@ -333,4 +333,17 @@ test('Ctrl+P and Ctrl+N navigate prompt history explicitly',()=>{
   tui.handleKey('\x10');assert.equal(tui.input,'second');
   tui.handleKey('\x10');assert.equal(tui.input,'first');
   tui.handleKey('\x0e');assert.equal(tui.input,'second');
+});
+
+
+test('mouse UI toggles between SGR wheel events and alternate-scroll translation',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.running=true;tui.schedule=()=>{};tui.render=()=>{};
+  let out='';const old=process.stdout.write;process.stdout.write=s=>{out+=String(s);return true;};
+  try{
+    tui.setMouseCapture(true);
+    assert.match(out,/1007l/);assert.match(out,/1000h/);assert.match(out,/1006h/);
+    out='';
+    tui.setMouseCapture(false);
+    assert.match(out,/1006l/);assert.match(out,/1000l/);assert.match(out,/1007h/);
+  }finally{process.stdout.write=old;}
 });

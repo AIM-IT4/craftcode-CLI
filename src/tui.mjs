@@ -136,7 +136,7 @@ export class TerminalTui{
   start(){
     if(!process.stdin.isTTY||!process.stdout.isTTY)throw new Error('Craft Code requires an interactive terminal.');
     this.running=true;
-    process.stdout.write(`${CSI}?1049h${CSI}?1007l${CSI}?25l${CSI}?2004h${this.mouseCapture?`${CSI}?1000h${CSI}?1006h`:''}${CSI}2J${CSI}H`);
+    process.stdout.write(`${CSI}?1049h${this.mouseCapture?`${CSI}?1007l${CSI}?1000h${CSI}?1006h`:`${CSI}?1007h`}${CSI}?25l${CSI}?2004h${CSI}2J${CSI}H`);
     process.stdin.setEncoding('utf8');process.stdin.setRawMode(true);process.stdin.resume();
     process.stdin.on('data',this._data);process.stdout.on('resize',this._resize);
     this._tick=setInterval(()=>{if(this.busy){this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;this.schedule();}},120);
@@ -152,7 +152,7 @@ export class TerminalTui{
   setMouseCapture(on){
     const next=!!on;if(next===this.mouseCapture)return;
     this.mouseCapture=next;
-    process.stdout.write(next?'\x1b[?1000h\x1b[?1006h':'\x1b[?1006l\x1b[?1000l');
+    process.stdout.write(next?'\x1b[?1007l\x1b[?1000h\x1b[?1006h':'\x1b[?1006l\x1b[?1000l\x1b[?1007h');
     this.setNotice(next?'Mouse UI ON · /mouse off restores native copy':'Native selection ON · drag to select · Ctrl+C copy',2200);
     this.prevLines=[];this.render();
   }
@@ -393,7 +393,7 @@ export class TerminalTui{
       chip(`Today ${fmtTokens(today)}`,{tone:'blue',icon:'◷'}),
       chip(`Context ${ctx}`,{tone:'violet',icon:'◇'})
     ];
-    const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','wheel scroll · /mouse off for native copy'):paint('dim','wheel/↑↓ scroll · Ctrl+P/N history · / commands');
+    const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','mouse wheel scroll · /mouse off for native copy'):paint('dim','wheel/↑↓ scroll · Ctrl+P/N history · drag to copy');
     const line='  '+joined,space=Math.max(2,w-width(line)-width(hint)-2);
     if(this.mouseCapture)this.regions.push({x1:3,x2:3+width(joined),y,action:'usage'});
     return fit(line+' '.repeat(space)+hint,w);
