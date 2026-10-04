@@ -180,3 +180,20 @@ test('TPM 429 is retried instead of surfaced immediately',async()=>{
 test('bang command routes through shell command handler',async()=>{
   let got='';const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),onCommand:async x=>{got=x;},showSplash:false});tui.schedule=()=>{};tui.input='!git status';tui.cursor=tui.input.length;await tui.submit();assert.equal(got,'/bash git status');assert.equal(tui.transcript.length,0);
 });
+
+
+import { describeMcpError } from '../src/mcp.mjs';
+
+test('MCP errors are actionable instead of leaking transport noise',()=>{
+  const missing=Object.assign(new Error('docker is not recognized as an internal or external command'),{code:'ENOENT'});
+  assert.match(describeMcpError('github',missing,{command:'docker'}),/needs Docker Desktop/);
+  assert.doesNotMatch(describeMcpError('github',missing,{command:'docker'}),/internal or external command/i);
+  assert.match(describeMcpError('github',new Error('Connection closed'),{command:'docker'}),/Docker Desktop/);
+});
+
+test('TUI suppresses duplicate notice spam within a short window',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  tui.add('notice','Connection failed');
+  tui.add('notice','Connection failed');
+  assert.equal(tui.transcript.filter(x=>x.role==='notice').length,1);
+});
