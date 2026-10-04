@@ -19,5 +19,16 @@
     "enabled": true,
     "maxParallel": 4,
     "defaultBudgetTokens": 250000
+  },
+  "provider": "codecraft",
+  "providers": {
+    "codecraft": {
+      "type": "codecraft",
+      "baseUrl": "https://codecraftapi.com/v1"
+    },
+    "openrouter": {
+      "type": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1"
+    }
   }
 }

@@ -18,7 +18,7 @@ export const pctBar = (used, total, width = 12) => {
   return `${'█'.repeat(on)}${'░'.repeat(width - on)}`;
 };
 export function banner() {
-  console.log(color('bold', 'CraftCLI') + color('dim', '  CodeCraft agent • skills • plugins • MCP • token guard'));
+  console.log(color('bold', 'CraftCLI') + color('dim', '  provider-agnostic agent • skills • plugins • MCP • token guard'));
 }
 export function statusLine({ model, mode, request, session, used, plan }) {
   const remaining = Math.max(0, plan - used);
