@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fmtTokens, pctBar } from '../src/ui.mjs';
 import { CodeCraftClient } from '../src/codecraft.mjs';
+import { ToolRegistry } from '../src/tools.mjs';
 
 test('token formatting',()=>{assert.equal(fmtTokens(6_000_000),'6.00M');assert.equal(fmtTokens(1200),'1.2k');});
 test('progress bar length',()=>assert.equal(pctBar(50,100,10).length,10));
@@ -280,7 +281,7 @@ test('Vercel connector uses CLI device auth instead of unapproved MCP OAuth', as
   const {loadConfig}=await import('../src/config.mjs');const cfg=await loadConfig(process.cwd());
   assert.equal(cfg.connectorCatalog.vercel.type,'cli');
   assert.equal(cfg.connectorCatalog.vercel.oauth,undefined);
-  assert.match(cfg.connectorCatalog.vercel.authHint,/approved MCP clients/i);
+  assert.match(cfg.connectorCatalog.vercel.authHint,/approved clients/i);
 });
 
 test('vercel_api is exposed as a first-class agent tool',()=>{
