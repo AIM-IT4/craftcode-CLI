@@ -6,9 +6,14 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 13,
+  configVersion: 14,
+  provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
+  providers: {
+    codecraft: { type: 'codecraft', baseUrl: 'https://codecraftapi.com/v1', apiKeyEnv: 'CODECRAFT_API_KEY' },
+    openrouter: { type: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY', appUrl: 'https://github.com/AIM-IT4/craftcode-CLI', appName: 'Craft Code' }
+  },
   // "auto" infers the CodeCraft tier from X-RateLimit-Limit. Set a number to override.
   planTokens: 'auto',
   resetDay: 4,
@@ -143,4 +148,16 @@ export function resolvePlanTokens(config, planHint) {
   if(planHint?.tokens)return {tokens:planHint.tokens,source:'rate-limit'};
   // Safer than overstating remaining allowance. Starter is CodeCraft's first paid tier.
   return {tokens:30_000_000,source:'fallback'};
+}
+
+
+export function normalizeProviderConfig(config={}){
+  const provider=String(config.provider||process.env.CRAFTCODE_PROVIDER||'codecraft').trim()||'codecraft';
+  const providers={
+    codecraft:{type:'codecraft',baseUrl:'https://codecraftapi.com/v1',apiKeyEnv:'CODECRAFT_API_KEY'},
+    openrouter:{type:'openrouter',baseUrl:'https://openrouter.ai/api/v1',apiKeyEnv:'OPENROUTER_API_KEY',appUrl:'https://github.com/AIM-IT4/craftcode-CLI',appName:'Craft Code'},
+    ...(config.providers||{})
+  };
+  if(config.baseUrl)providers.codecraft={...providers.codecraft,baseUrl:config.baseUrl};
+  return{...config,provider,providers,model:config.model||''};
 }
