@@ -57,3 +57,5 @@ export class OpenAICompatibleClient{
     }finally{release();}
   }
 }
+
+export const OpenAICompatibleProvider=OpenAICompatibleClient;

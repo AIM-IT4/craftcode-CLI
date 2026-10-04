@@ -13,3 +13,5 @@ export class CodeCraftClient extends OpenAICompatibleClient{
   constructor(o={}){super({id:'codecraft',label:'CodeCraft',baseUrl:'https://codecraftapi.com/v1',...o});}
   planHint(){const p=PLAN_BY_RPM.get(this.rateLimits.rpmLimit);return p?{...p,rpm:this.rateLimits.rpmLimit}:null;}
 }
+
+export const CodeCraftProvider=CodeCraftClient;

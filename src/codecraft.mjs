@@ -1,1 +1,1 @@
-export {CodeCraftClient} from './providers/codecraft.mjs';
+export {CodeCraftClient,CodeCraftProvider} from './providers/codecraft.mjs';
