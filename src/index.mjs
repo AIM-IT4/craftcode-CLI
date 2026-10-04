@@ -76,14 +76,40 @@ function permissionPresetOf(p={}){return Object.entries(PERMISSION_PRESETS).find
 function activityForTool(x={}){const n=String(x.name||''),d=String(x.detail||'');if(n==='search_files')return 'Searching';if(n==='read_file'||n==='list_files')return 'Inspecting';if(n==='replace_in_file'||n==='write_file')return 'Editing';if(n==='run_command'){if(/(?:^|\s)(test|pytest|jest|vitest|mocha|cargo test|go test|npm test|pnpm test|yarn test)(?:\s|$)/i.test(d))return 'Testing';if(/build|compile|tsc|vite build|next build/i.test(d))return 'Building';return 'Running command';}if(n.startsWith('git_'))return 'Checking Git';if(n==='load_skill')return 'Loading skill';if(n.includes('mcp'))return 'Connecting';if(n==='update_todo')return 'Planning';return 'Working';}
 const table=(rows,cols)=>rows.map(r=>cols.map(([k,w])=>String(r[k]??'').slice(0,w).padEnd(w)).join('  ')).join('\n');
 const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const vercelExe=()=>process.platform==='win32'?'npx.cmd':'npx';
+async function vercelCapture(args,cwd){
+  return new Promise((resolve)=>{
+    const p=spawn(vercelExe(),['-y','vercel@latest',...args],{cwd,stdio:['ignore','pipe','pipe'],shell:false,windowsHide:true});
+    let stdout='',stderr='';p.stdout?.on('data',b=>stdout+=b);p.stderr?.on('data',b=>stderr+=b);
+    p.on('error',e=>resolve({code:-1,stdout,stderr:String(e.message||e)}));
+    p.on('exit',code=>resolve({code:code??-1,stdout,stderr}));
+  });
+}
+async function vercelInteractiveLogin(cwd,tui){
+  let who=await vercelCapture(['whoami'],cwd);
+  if(who.code===0&&who.stdout.trim())return who.stdout.trim();
+  tui.stop();
+  try{
+    console.log('\nCraft Code → Vercel device login');
+    console.log('Approve the Vercel login in the browser/device page that opens.\n');
+    await new Promise((resolve,reject)=>{
+      const p=spawn(vercelExe(),['-y','vercel@latest','login'],{cwd,stdio:'inherit',shell:false});
+      p.on('error',reject);p.on('exit',code=>code===0?resolve():reject(new Error('Vercel login exited with code '+code)));
+    });
+  }finally{tui.start();}
+  who=await vercelCapture(['whoami'],cwd);
+  if(who.code!==0||!who.stdout.trim())throw new Error('Vercel login completed but vercel whoami could not verify the account.');
+  return who.stdout.trim();
+}
+
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
-  if(version){console.log('Craft Code 0.9.4');return;}
+  if(version){console.log('Craft Code 0.9.5');return;}
   if(action==='auth'){await handleAuth(actionArg);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.4');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.5');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -175,7 +201,7 @@ async function main(){
       if(cmd==='/select'){tui.enterSelectionMode();return;}
       if(cmd==='/mouse'){const v=(rest[0]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /mouse on|off. Native terminal selection is the default.');tui.setMouseCapture(v==='on');return;}
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nPgUp/PgDn scroll history · drag-select + Ctrl+C works by default · /mouse on enables clickable footer controls\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages MCP integrations. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nPgUp/PgDn scroll history · drag-select + Ctrl+C works by default · /mouse on enables clickable footer controls\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations. Vercel uses the Vercel CLI device-login flow because Vercel MCP restricts OAuth to approved clients. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
@@ -228,9 +254,20 @@ async function main(){
         else tui.add('assistant',mcp.list().map(x=>`${x.connected?'●':'○'} ${x.name} [${x.type}${x.oauth?' · OAuth':''}]`).join('\n')||'No MCP servers configured.');return;
       }
       if(cmd==='/connect'){
-        let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
+        let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}
+        name=String(name).toLowerCase();
+        if(name==='vercel'){
+          tui.setNotice('Checking Vercel CLI login…',0);
+          try{
+            const user=await vercelInteractiveLogin(cwd,tui);
+            tui.setNotice('Vercel connected',2200);
+            tui.add('assistant','Vercel CLI authenticated as `'+user+'`. Craft Code is using Vercel’s supported CLI/device-login path instead of unapproved Vercel MCP OAuth. You can now ask for projects, deployments, logs, domains, environment configuration, or REST API operations.');
+          }catch(e){tui.setNotice('Vercel not connected',2200);tui.add('notice',e.message||String(e));}
+          return;
+        }
+        tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
       }
-      if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
+      if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');if(rest[0].toLowerCase()==='vercel')return tui.add('assistant','Vercel authentication is owned by the Vercel CLI. Run `npx vercel@latest logout` if you want to revoke the local CLI session.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
       if(cmd==='/agents'){const xs=agents.list();tui.add('assistant',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
       if(cmd==='/agent'){
         const sub=(rest[0]||'').toLowerCase();if(sub==='spawn'){const role=(rest[1]||'explorer').toLowerCase(),task=rest.slice(2).join(' ');if(!task)return tui.add('notice','Use /agent spawn <explorer|tester|reviewer|researcher|writer> <task>.');const j=await agents.spawn({role,task,worktree:role==='writer'});tui.setNotice(`Spawned ${j.id}`);return;}if(sub==='show'&&rest[1]){const j=agents.list().find(x=>x.id===rest[1]);if(!j)return tui.add('notice','Unknown agent id.');return tui.add('assistant',`${j.id} · ${j.role} · ${j.status} · ${fmtTokens(j.used||0)}/${fmtTokens(j.budget)}\n\n${j.result||j.error||'Still working…'}`);}if(sub==='apply'&&rest[1]){if(!await tui.askApproval('write',`Apply patch from ${rest[1]} to main workspace?`))return;const r=await agents.apply(rest[1]);tui.add(r.ok?'assistant':'notice',r.message);return;}return command('/agents');
