@@ -67,6 +67,8 @@ Most coding agents hide at least one important thing: context growth, permission
 ### Professional terminal workflow
 
 - Streaming responses with inline `Thinking…`, search, read, edit, test and review activity.
+- Mouse-wheel conversation scrolling plus **Select** mode (`/select`) for normal terminal drag-selection and Ctrl+C copying.
+- Inline red/green code edit previews directly under edit tool cards.
 - Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls.
 - File attachment/autocomplete with `@path/to/file`.
 - Git checkpoints and `/undo`.

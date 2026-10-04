@@ -58,6 +58,7 @@ const COMMANDS=[
   {cmd:'/init',desc:'Create a starter AGENTS.md'},
   {cmd:'/settings',desc:'Persistent workspace settings'},
   {cmd:'/bash',desc:'Run a shell command (or prefix input with !)'},
+  {cmd:'/select',desc:'Release mouse capture so terminal text can be selected/copied'},
   {cmd:'/new',desc:'Start fresh session'},
   {cmd:'/help',desc:'Keyboard shortcuts'},
   {cmd:'/exit',desc:'Quit Craft Code'},
@@ -98,6 +99,25 @@ function markdownLines(text,w){
   }
   return out;
 }
+function editPreviewLines(card,w,maxLines=12){
+  const args=card?.args||{},out=[],room=Math.max(16,w-10);
+  if(card?.name==='replace_in_file'){
+    const oldLines=String(args.old_text??'').split(/\r?\n/),newLines=String(args.new_text??'').split(/\r?\n/);
+    out.push(`      ${paint('dim','@@')} ${paint('cyan',crop(args.path||card.detail||'edit',room-3))}`);
+    const rows=[...oldLines.map(x=>({sign:'-',tone:'red',text:x})),...newLines.map(x=>({sign:'+',tone:'green',text:x}))];
+    for(const row of rows.slice(0,maxLines))out.push(`      ${paint(row.tone,row.sign)} ${paint(row.tone,crop(row.text,room))}`);
+    if(rows.length>maxLines)out.push(`      ${paint('dim',`… ${rows.length-maxLines} diff lines hidden · Ctrl+O expands tool output`)}`);
+    return out;
+  }
+  if(card?.name==='write_file'){
+    const lines=String(args.content??'').split(/\r?\n/);
+    out.push(`      ${paint('dim','@@')} ${paint('cyan',crop(args.path||card.detail||'file write',room-3))} ${paint('dim','new content preview')}`);
+    for(const line of lines.slice(0,maxLines))out.push(`      ${paint('green','+')} ${paint('green',crop(line,room))}`);
+    if(lines.length>maxLines)out.push(`      ${paint('dim',`… ${lines.length-maxLines} lines hidden`)}`);
+    return out;
+  }
+  return out;
+}
 const fmtPlan=n=>n===Infinity?'Unlimited':fmtTokens(n);
 
 export class TerminalTui{
@@ -109,7 +129,7 @@ export class TerminalTui{
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
     this.fileSuggestionIndex=0;this.commandSelection=0;this.toolSelection=null;this.spinnerIndex=0;
     this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;
-    this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;
+    this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;this.selectionMode=false;
     this._data=b=>this.handleData(String(b));this._resize=()=>{this.prevLines=[];this.render();};
   }
   start(){
@@ -127,7 +147,20 @@ export class TerminalTui{
     try{process.stdin.setRawMode(false);}catch{}
     process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?2004l${CSI}?25h${CSI}?1049l`);
   }
-  schedule(){if(this.renderQueued)return;this.renderQueued=true;setTimeout(()=>{this.renderQueued=false;this.render();},16);}
+  schedule(){if(this.selectionMode||this.renderQueued)return;this.renderQueued=true;setTimeout(()=>{this.renderQueued=false;this.render();},16);}
+  enterSelectionMode(){
+    if(this.selectionMode)return;
+    this.notice='SELECT · drag to select · Ctrl+C copy · Esc return';
+    this.prevLines=[];this.render();
+    this.selectionMode=true;
+    process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?25h`);
+  }
+  exitSelectionMode(){
+    if(!this.selectionMode)return;
+    this.selectionMode=false;this.notice='';
+    process.stdout.write(`${CSI}?1000h${CSI}?1006h${CSI}?25l`);
+    this.prevLines=[];this.render();
+  }
   setMeta(x={}){if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
@@ -145,7 +178,7 @@ export class TerminalTui{
   stream(t){let x=this.transcript.at(-1);if(!x||x.role!=='assistant'){x={role:'assistant',text:''};this.transcript.push(x);}x.text+=t;this.schedule();}
   replaceTranscript(x=[]){this.transcript=x.map(m=>({...m,text:String(m.text??'')}));this.schedule();}
   getTranscript(){return this.transcript.filter(m=>m.role!=='thinking');}
-  toolStart({name,detail}){const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
+  toolStart({name,detail,args}){const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
   toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}this.schedule();}
   askApproval(kind,detail){return new Promise(resolve=>{this.approval={kind,detail:String(detail),resolve};this.schedule();});}
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
@@ -187,13 +220,20 @@ export class TerminalTui{
   selectTool(delta=0,toggle=false){const idxs=this.transcript.map((m,i)=>m.role==='toolcard'?i:-1).filter(i=>i>=0);if(!idxs.length){this.setNotice('No tool cards yet.');return;}let p=this.toolSelection==null?idxs.length-1:idxs.indexOf(this.toolSelection);if(p<0)p=idxs.length-1;p=Math.max(0,Math.min(idxs.length-1,p+delta));this.toolSelection=idxs[p];if(toggle)this.transcript[this.toolSelection].expanded=!this.transcript[this.toolSelection].expanded;this.schedule();}
   handleMouse(seq){
     const m=seq.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);if(!m||m[4]!=='M')return;
-    const button=Number(m[1]),x=Number(m[2]),y=Number(m[3]);if((button&3)!==0)return;
+    const button=Number(m[1]),x=Number(m[2]),y=Number(m[3]);
+    if(button&64){
+      const down=(button&1)===1;
+      this.scrollOffset=Math.max(0,this.scrollOffset+(down?-5:5));
+      this.schedule();return;
+    }
+    if((button&3)!==0)return;
     const r=this.regions.find(r=>y===r.y&&x>=r.x1&&x<=r.x2);if(!r)return;
     this.activateRegion(r.action);
   }
   async activateRegion(action){
     if(action==='usage')return this.openUsage();
     if(action==='attach'){this.input=this.input.slice(0,this.cursor)+'@'+this.input.slice(this.cursor);this.cursor++;return this.schedule();}
+    if(action==='select')return this.enterSelectionMode();
     if(action==='plus'){const a=await this.openQuickActions();return this.onQuickAction?.(a);}
     if(action==='mode'){const m=await this.pickMode();if(m)this.onModePick?.(m);return;}
     if(action==='model'){const models=await this.onModelsRequest?.();if(models){const m=await this.pickModel(models,this.model);if(m)this.onModelPick?.(m);}return;}
@@ -204,6 +244,7 @@ export class TerminalTui{
     if(action==='agents')return this.onCommand?.('/agents');
   }
   handleData(data){
+    if(this.selectionMode){if(data.includes('\x1b'))this.exitSelectionMode();return;}
     while(data.length){
       const mm=data.match(/^\x1b\[<\d+;\d+;\d+[Mm]/);if(mm){this.handleMouse(mm[0]);data=data.slice(mm[0].length);continue;}
       if(data.startsWith('\r\n')){this.handleKey('\r');data=data.slice(2);continue;}
@@ -266,6 +307,7 @@ export class TerminalTui{
         const sel=i===this.toolSelection,st=m.status==='running'?paint('orange',spinner[this.spinnerIndex]):m.status==='error'?paint('red','×'):paint('green','✓'),dur=m.durationMs?paint('dim',`${Math.max(.1,m.durationMs/1000).toFixed(1)}s`):'';
         const label=`${glyph(m.name)} ${m.name}${m.detail?` · ${m.detail}`:''}`;
         out.push(`  ${sel?paint('orange','›'):paint('dim','│')} ${st} ${paint(sel?'white':'slate',crop(label,w-16))} ${dur}`);
+        if(m.status==='done'&&(m.name==='replace_in_file'||m.name==='write_file'))out.push(...editPreviewLines(m,w));
         if(m.expanded){const all=wrap(m.result||'(no output)',Math.max(20,w-10));for(const x of all.slice(0,14))out.push(`      ${paint('dim','│')} ${paint('slate',x)}`);if(all.length>14)out.push(`      ${paint('dim','│ … output clipped')}`);}continue;
       }
       if(m.role==='assistant'){markdownLines(m.text,w-5).forEach((x,j)=>out.push(`${j?'    ':paint('orange','●   ')}${x}`));continue;}
@@ -315,7 +357,7 @@ export class TerminalTui{
   toolbarLine(w,y){
     const u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total),pct=u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0;
     const permLabel=this.permissionPreset==='auto'?'Auto':this.permissionPreset==='edit'?'Edit':this.permissionPreset==='locked'?'Read only':'Ask';
-    const left=[{label:'＋',action:'plus',tone:'orange'},{label:'@',action:'attach'},{label:this.mode.toUpperCase(),action:'mode',tone:this.mode==='build'?'green':'yellow'},{label:permLabel,action:'permissions',tone:this.permissionPreset==='auto'?'green':this.permissionPreset==='locked'?'red':'yellow'},{label:`MCP ${this.startupMeta?.mcp||0}`,action:'connectors',tone:'blue'},...(this.agents.length?[{label:`Agents ${this.agents.filter(a=>a.status==='running'||a.status==='starting').length||this.agents.length}`,action:'agents',tone:'violet'}]:[])];
+    const left=[{label:'＋',action:'plus',tone:'orange'},{label:'@',action:'attach'},{label:'Select',action:'select',tone:'blue'},{label:this.mode.toUpperCase(),action:'mode',tone:this.mode==='build'?'green':'yellow'},{label:permLabel,action:'permissions',tone:this.permissionPreset==='auto'?'green':this.permissionPreset==='locked'?'red':'yellow'},{label:`MCP ${this.startupMeta?.mcp||0}`,action:'connectors',tone:'blue'},...(this.agents.length?[{label:`Agents ${this.agents.filter(a=>a.status==='running'||a.status==='starting').length||this.agents.length}`,action:'agents',tone:'violet'}]:[])];
     const right=[{label:crop(this.model,22),action:'model',tone:'orange'},{label:this.effort[0].toUpperCase()+this.effort.slice(1),action:'effort',tone:'violet'},...(this.lastCheckpoint?[{label:'Undo',action:'undo',tone:'yellow'}]:[])];
     let line='  ',x=3;for(const item of left){const txt=pill(item.label,{tone:item.tone});const n=width(txt);this.regions.push({x1:x,x2:x+n-1,y,action:item.action});line+=txt+' ';x+=n+1;}
     const rightText=right.map(i=>pill(i.label,{tone:i.tone})).join(' '),space=Math.max(1,w-width(line)-width(rightText)-1);let rx=width(line)+space+1;line+=' '.repeat(space);for(let i=0;i<right.length;i++){const txt=pill(right[i].label,{tone:right[i].tone}),n=width(txt);this.regions.push({x1:rx,x2:rx+n-1,y,action:right[i].action});line+=txt+(i===right.length-1?'':' ');rx+=n+1;}

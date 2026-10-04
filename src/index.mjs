@@ -79,11 +79,11 @@ const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth(
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
-  if(version){console.log('Craft Code 0.9.1');return;}
+  if(version){console.log('Craft Code 0.9.2');return;}
   if(action==='auth'){await handleAuth(actionArg);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.1');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.2');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -172,8 +172,9 @@ async function main(){
     const parts=line.trim().split(/\s+/),cmd=(parts[0]||'').toLowerCase(),rest=parts.slice(1),arg=rest.join(' ');
     try{
       if(cmd==='/exit'||cmd==='/quit')return await exit();
+      if(cmd==='/select')return tui.enterSelectionMode();
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card · PgUp/PgDn scroll\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect opens OAuth MCP login. Shift+Tab cycles permission presets. Footer pills are clickable in Windows Terminal.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nMouse wheel or PgUp/PgDn scrolls conversation history · /select releases mouse capture for drag-select + Ctrl+C\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect opens OAuth MCP login. Shift+Tab cycles permission presets. Footer pills are clickable in Windows Terminal.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}

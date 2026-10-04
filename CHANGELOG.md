@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.2
+
+- Added mouse-wheel scrolling for conversation history inside the full-screen TUI.
+- Added a Select mode (toolbar pill and `/select`) that temporarily releases terminal mouse capture for normal drag-selection and Ctrl+C copying; Esc returns to Craft Code.
+- Added automatic inline red/green edit previews for `replace_in_file` and bounded new-content previews for `write_file`.
+- Added regression coverage for scrolling, copy/select mode exposure, and inline edit rendering.
+
 ## 0.9.1
 
 - Prevented stdio connector stderr (including Windows `docker` shell errors) from corrupting the full-screen TUI.

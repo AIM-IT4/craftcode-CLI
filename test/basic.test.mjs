@@ -204,3 +204,26 @@ test('package exposes both executable CLI bins', async()=>{
   assert.equal(pkg.bin.craftcode,'src/index.mjs');
   assert.equal(pkg.bin.craftcli,'src/index.mjs');
 });
+
+
+test('mouse wheel scrolls internal conversation history',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  tui.handleMouse('\x1b[<64;10;10M');
+  assert.equal(tui.scrollOffset,5);
+  tui.handleMouse('\x1b[<65;10;10M');
+  assert.equal(tui.scrollOffset,0);
+});
+
+test('edit tool cards render an inline red-green diff preview',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  const id=tui.toolStart({name:'replace_in_file',detail:'src/a.js',args:{path:'src/a.js',old_text:'const x = 1;',new_text:'const x = 2;'}});
+  tui.toolEnd({cardId:id,result:'Updated src/a.js',durationMs:10,error:false});
+  const rendered=tui.transcriptLines(100).map(stripAnsiForTest=>String(stripAnsiForTest).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'')).join('\n');
+  assert.match(rendered,/- const x = 1;/);
+  assert.match(rendered,/\+ const x = 2;/);
+});
+
+test('Select mode is exposed as an interactive footer action',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.paintFrame=()=>{};tui.renderChat();
+  assert.ok(tui.regions.some(r=>r.action==='select'));
+});
