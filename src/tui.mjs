@@ -34,7 +34,9 @@ const spinner=['◐','◓','◑','◒'];
 const glyph=n=>/read|list|search/.test(n)?'⌕':/write|replace/.test(n)?'✎':/command/.test(n)?'›_':/git/.test(n)?'◆':/mcp/.test(n)?'↗':/todo/.test(n)?'☷':'◇';
 const COMMANDS=[
   {cmd:'/mode',desc:'Switch Plan / Build mode'},
-  {cmd:'/model',desc:'Choose CodeCraft model'},
+  {cmd:'/provider',desc:'Choose AI model provider'},
+  {cmd:'/providers',desc:'Show configured AI providers'},
+  {cmd:'/model',desc:'Choose model from active provider'},
   {cmd:'/effort',desc:'Set agent depth: Low / Normal / High'},
   {cmd:'/usage',desc:'Open token usage dashboard'},
   {cmd:'/permissions',desc:'Command/file permissions: Ask / Edit / Auto / Read-only'},
@@ -124,7 +126,7 @@ const fmtPlan=n=>n===Infinity?'Unlimited':fmtTokens(n);
 export class TerminalTui{
   constructor(o){
     Object.assign(this,o);
-    this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;
+    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;
     this.transcript=[];this.input='';this.cursor=0;this.history=[];this.hist=-1;
     this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
@@ -158,7 +160,7 @@ export class TerminalTui{
   }
   enterSelectionMode(){this.setMouseCapture(false);}
   exitSelectionMode(){/* native selection persists while mouse capture is off */}
-  setMeta(x={}){if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;this.schedule();}
+  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
     if(!v&&this.busy){const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());t.detail='Thought';}}
@@ -181,7 +183,8 @@ export class TerminalTui{
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
   askPlanApproval(){return new Promise(resolve=>{this.planApproval={resolve};this.schedule();});}
   resolvePlan(v){const p=this.planApproval;if(!p)return;this.planApproval=null;p.resolve(v);this.schedule();}
-  pickModel(models,current){return this.openPicker('model','Select model',models.map(m=>({id:m.id||m.name,label:m.id||m.name,meta:m.context_window||m.context_length?`${fmtTokens(m.context_window||m.context_length)} ctx`:''})).filter(x=>x.id),current);}
+  pickProvider(items,current=this.provider){return this.openPicker('provider','Select provider',(items||[]).map(x=>({id:x.id,label:x.label||x.id,meta:x.meta||x.type||''})),current);}
+  pickModel(models,current){return this.openPicker('model',`Select model · ${this.provider}`,models.map(m=>{const id=m.id||m.name,ctx=m.context_window||m.context_length,sp=m.supported_parameters,toolMeta=Array.isArray(sp)&&!sp.includes('tools')?'text only':Array.isArray(sp)&&sp.includes('tools')?'tools':'';return{id,label:id,meta:[ctx?`${fmtTokens(ctx)} ctx`:'',toolMeta].filter(Boolean).join(' · ')};}).filter(x=>x.id),current);}
   pickMode(current=this.mode){return this.openPicker('mode','Agent mode',[{id:'build',label:'Build',meta:'edit files · run commands'},{id:'plan',label:'Plan',meta:'read-only planning'}],current);}
   pickEffort(current=this.effort){return this.openPicker('effort','Agent depth',[{id:'low',label:'Low',meta:'fast · fewer tool loops'},{id:'normal',label:'Normal',meta:'balanced'},{id:'high',label:'High',meta:'deeper verification'}],current);}
   pickPermissions(current=this.permissionPreset){return this.openPicker('permissions','Permissions',[{id:'ask',label:'Ask',meta:'ask before edits · commands · MCP actions'},{id:'edit',label:'Edit',meta:'allow edits · ask commands/MCP'},{id:'auto',label:'Auto',meta:'allow edits · commands · MCP actions'},{id:'locked',label:'Read only',meta:'deny edits · commands · MCP actions'}],current);}
@@ -315,7 +318,7 @@ export class TerminalTui{
   }
   renderWelcome(){
     const cols=Math.max(70,process.stdout.columns||110),rows=Math.max(24,process.stdout.rows||32),w=Math.min(82,cols-8),left=Math.max(2,Math.floor((cols-w)/2)),pad=s=>' '.repeat(left)+s,u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total);
-    const title='CRAFT CODE';const lines=['','',pad(`${paint('orange','✦')} ${paint('bold',title)} ${paint('dim','· CodeCraft-native coding agent')}`),'',pad(paint('orange','╭'+'─'.repeat(w-2)+'╮')),pad(paint('orange','│')+` ${paint('bold','Workspace')}  ${crop(this.cwd,w-16)}`+' '.repeat(Math.max(0,w-4-width(`Workspace  ${crop(this.cwd,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Model')}      ${paint('orange2',crop(this.model,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Model      ${crop(this.model,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Plan')}       ${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`+' '.repeat(Math.max(0,w-4-width(`Plan       ${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`)))+paint('orange','│')),pad(paint('orange','╰'+'─'.repeat(w-2)+'╯')),'',pad(`${paint('dim','Skills')} ${this.startupMeta?.skills||0}   ${paint('dim','Plugins')} ${this.startupMeta?.plugins||0}   ${paint('dim','MCP')} ${this.startupMeta?.mcp||0}`),'',pad(paint('dim','Review file edits and shell approvals. Use trusted repos, skills, plugins and connectors.')),'',pad(`${paint('blue',paint('bold','Enter'))} ${paint('dim','continue')}   ${paint('dim','·')}   ${paint('dim','Q quit')}`)];
+    const title='CRAFT CODE';const lines=['','',pad(`${paint('orange','✦')} ${paint('bold',title)} ${paint('dim','· provider-agnostic coding agent')}`),'',pad(paint('orange','╭'+'─'.repeat(w-2)+'╮')),pad(paint('orange','│')+` ${paint('bold','Workspace')}  ${crop(this.cwd,w-16)}`+' '.repeat(Math.max(0,w-4-width(`Workspace  ${crop(this.cwd,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Provider')}   ${paint('cyan',crop(this.provider,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Provider   ${crop(this.provider,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Model')}      ${paint('orange2',crop(this.model,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Model      ${crop(this.model,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Plan')}       ${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`+' '.repeat(Math.max(0,w-4-width(`Plan       ${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`)))+paint('orange','│')),pad(paint('orange','╰'+'─'.repeat(w-2)+'╯')),'',pad(`${paint('dim','Skills')} ${this.startupMeta?.skills||0}   ${paint('dim','Plugins')} ${this.startupMeta?.plugins||0}   ${paint('dim','MCP')} ${this.startupMeta?.mcp||0}`),'',pad(paint('dim','Review file edits and shell approvals. Use trusted repos, skills, plugins and connectors.')),'',pad(`${paint('blue',paint('bold','Enter'))} ${paint('dim','continue')}   ${paint('dim','·')}   ${paint('dim','Q quit')}`)];
     while(lines.length<rows)lines.push('');this.paintFrame(lines.slice(0,rows),cols);
   }
   overlay(w){

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig} from './config.mjs';
-import {CodeCraftClient} from './codecraft.mjs';
+import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig,normalizeProviderConfig} from './config.mjs';
+import {ProviderRegistry} from './providers/index.mjs';
 import {UsageTracker} from './usage.mjs';
 import {SkillRegistry} from './skills.mjs';
 import {PluginRegistry} from './plugins.mjs';
@@ -16,14 +16,14 @@ import {CheckpointManager} from './checkpoints.mjs';
 import {fmtTokens} from './ui.mjs';
 import {MarketplaceManager} from './marketplace.mjs';
 import {AgentManager} from './agents.mjs';
-import {resolveApiKey,saveApiKey,clearApiKey,maskKey,promptSecret,AUTH_FILE} from './auth.mjs';
+import {resolveProviderApiKey,saveProviderApiKey,clearProviderApiKey,maskKey,promptSecret,AUTH_FILE} from './auth.mjs';
 import {spawn} from 'node:child_process';
 import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
 
 function parseArgs(){
   const a=process.argv.slice(2);let yes=false,cwd=process.cwd(),resume=false,showSplash=true,doctor=false,version=false;
-  let action='',actionArg='',resumeRef='latest';
-  if(a[0]==='auth'){action='auth';actionArg=(a[1]||'status').toLowerCase();a.splice(0,2);}
+  let action='',actionArg='',actionProvider='',resumeRef='latest';
+  if(a[0]==='auth'){action='auth';actionArg=(a[1]||'status').toLowerCase();actionProvider=(a[2]||'').toLowerCase();a.splice(0,3);}
   else if(['update','upgrade'].includes(a[0])){action='update';a.splice(0,1);}
   else if(['resume','continue'].includes((a[0]||'').toLowerCase())){resume=true;a.splice(0,1);}
   for(let i=0;i<a.length;i++){
@@ -35,7 +35,7 @@ function parseArgs(){
     else if(a[i].startsWith('--session=')){resume=true;resumeRef=a[i].slice(10)||'latest';}
     else if(!a[i].startsWith('-'))cwd=path.resolve(a[i]);
   }
-  return{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg};
+  return{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider};
 }
 
 async function runUpdate(){
@@ -48,29 +48,22 @@ async function runUpdate(){
   console.log('Craft Code updated. Run: craftcode --version');
 }
 
-async function handleAuth(actionArg){
+async function handleAuth(actionArg,providerArg,cwd){
+  await writeStarterConfig();const config=normalizeProviderConfig(await loadConfig(cwd)),registry=new ProviderRegistry(config),providerId=providerArg||registry.activeId(),p=registry.get(providerId);
   if(actionArg==='login'){
-    const key=await promptSecret('CodeCraft API key');
-    if(!key)throw new Error('No API key entered.');
-    process.stdout.write('Validating with CodeCraft… ');
-    const probe=new CodeCraftClient({apiKey:key,baseUrl:'https://codecraftapi.com/v1',maxOutputTokens:8});
-    try{await probe.models();}catch(e){console.log('failed');throw new Error(`CodeCraft rejected the key: ${e.message}`);}
-    const file=await saveApiKey(key);console.log('ok');
-    console.log(`Saved for future sessions: ${file}`);
-    console.log('You can now run Craft Code from any terminal without setting CODECRAFT_API_KEY.');
-    return;
+    if(p.auth===false){console.log(`${p.label} does not require an API key.`);return;}
+    const key=await promptSecret(`${p.label} API key`);if(!key)throw new Error('No API key entered.');
+    process.stdout.write(`Validating with ${p.label}… `);const probe=registry.create(providerId,{apiKey:key,maxOutputTokens:8});
+    try{await probe.models();}catch(e){console.log('failed');throw new Error(`${p.label} rejected the key: ${e.message}`);}
+    const file=await saveProviderApiKey(providerId,key);console.log('ok');console.log(`Saved ${p.label} credential: ${file}`);return;
   }
-  if(actionArg==='logout'){
-    await clearApiKey();console.log('Stored CodeCraft API key removed.');return;
-  }
-  const a=await resolveApiKey();
-  console.log(`CodeCraft auth: ${a.key?'configured':'not configured'}`);
-  console.log(`Source: ${a.source}`);
-  if(a.key)console.log(`Key: ${maskKey(a.key)}`);
-  console.log(`Credential file: ${AUTH_FILE}`);
+  if(actionArg==='logout'){await clearProviderApiKey(providerId);console.log(`Stored ${p.label} API key removed.`);return;}
+  const a=await resolveProviderApiKey(providerId,p);console.log(`${p.label} auth: ${p.auth===false?'not required':a.key?'configured':'not configured'}`);console.log(`Source: ${p.auth===false?'none required':a.source}`);if(a.key)console.log(`Key: ${maskKey(a.key)}`);console.log(`Credential file: ${AUTH_FILE}`);
 }
-function pickDefaultModel(ms,x){if(x)return x;const ids=ms.map(m=>m.id||m.name).filter(Boolean);return ids.find(x=>/opus/i.test(x))||ids[0]||'';}
-function pickSubagentModel(ms,main){const ids=ms.map(m=>m.id||m.name).filter(Boolean);return ids.find(x=>/sonnet/i.test(x))||ids.find(x=>x!==main)||main;}
+const toolCapable=m=>!Array.isArray(m?.supported_parameters)||m.supported_parameters.includes('tools');
+function pickDefaultModel(ms,x){const rows=(ms||[]).filter(toolCapable),ids=rows.map(m=>m.id||m.name).filter(Boolean);if(x&&ids.includes(x))return x;return ids.find(x=>/opus/i.test(x))||ids[0]||'';}
+function pickSubagentModel(ms,main){const ids=(ms||[]).filter(toolCapable).map(m=>m.id||m.name).filter(Boolean);return ids.find(x=>/sonnet/i.test(x))||ids.find(x=>x!==main)||main;}
+function resolveUsagePlan(config,client,providerId){if(providerId==='codecraft')return resolvePlanTokens(config,client.planHint?.());const explicit=parseTokenAmount(config.planTokens);if(config.planTokens!=='auto'&&explicit)return{tokens:explicit,source:'config'};return{tokens:Infinity,source:'observed'};}
 const PERMISSION_PRESETS={ask:{label:'Ask',write:'ask',shell:'ask',mcp:'ask'},edit:{label:'Edit',write:'allow',shell:'ask',mcp:'ask'},auto:{label:'Auto',write:'allow',shell:'allow',mcp:'allow'},locked:{label:'Read only',write:'deny',shell:'deny',mcp:'deny'}};
 function permissionPresetOf(p={}){return Object.entries(PERMISSION_PRESETS).find(([,v])=>v.write===p.write&&v.shell===p.shell&&(p.mcp??'ask')===v.mcp)?.[0]||'ask';}
 function activityForTool(x={}){const n=String(x.name||''),d=String(x.detail||'');if(n==='search_files')return 'Searching';if(n==='read_file'||n==='list_files')return 'Inspecting';if(n==='replace_in_file'||n==='write_file')return 'Editing';if(n==='run_command'){if(/(?:^|\s)(test|pytest|jest|vitest|mocha|cargo test|go test|npm test|pnpm test|yarn test)(?:\s|$)/i.test(d))return 'Testing';if(/build|compile|tsc|vite build|next build/i.test(d))return 'Building';return 'Running command';}if(n.startsWith('git_'))return 'Checking Git';if(n==='load_skill')return 'Loading skill';if(n.includes('mcp'))return 'Connecting';if(n==='update_todo')return 'Planning';return 'Working';}
@@ -104,23 +97,23 @@ async function vercelInteractiveLogin(cwd,tui){
 
 
 async function main(){
-  const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
+  const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
   if(version){console.log('Craft Code 0.9.9');return;}
-  if(action==='auth'){await handleAuth(actionArg);return;}
+  if(action==='auth'){await handleAuth(actionArg,actionProvider,cwd);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     const auth=await resolveApiKey();console.log('Craft Code 0.9.9');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
-  const config=await loadConfig(cwd);
-  const auth=await resolveApiKey(),apiKey=auth.key;
-  if(!apiKey){console.error('No CodeCraft API key configured. Run: craftcode auth login');return;}
-  const client=new CodeCraftClient({apiKey,baseUrl:config.baseUrl,maxOutputTokens:config.maxOutputTokens});
-  let availableModels=[];try{availableModels=await client.models();}catch(e){console.error(`CodeCraft: ${e.message}`);return;}
+  const config=normalizeProviderConfig(await loadConfig(cwd)),providers=new ProviderRegistry(config);
+  let providerId=providers.activeId(),providerConfig=providers.get(providerId),auth=await resolveProviderApiKey(providerId,providerConfig);
+  if(providerConfig.auth!==false&&!auth.key){console.error(`No ${providerConfig.label} API key configured. Run: craftcode auth login ${providerId}`);return;}
+  let client=providers.create(providerId,{apiKey:auth.key,maxOutputTokens:config.maxOutputTokens});
+  let availableModels=[];try{availableModels=await client.models();}catch(e){console.error(`${providerConfig.label}: ${e.message}`);return;}
   let model=pickDefaultModel(availableModels,config.model);
-  if(!model)return console.error('No CodeCraft model available.');
-  const planResolved=resolvePlanTokens(config,client.planHint());
+  if(!model)return console.error(`No tool-capable model available from ${providerConfig.label}.`);
+  let planResolved=resolveUsagePlan(config,client,providerId);
   const usage=await new UsageTracker(planResolved.tokens,config.resetDay).load();
   const marketplace=await new MarketplaceManager().scan();
   const skills=await new SkillRegistry(cwd).scan();
@@ -160,7 +153,15 @@ async function main(){
   const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
   const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
   const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
-  const setModel=x=>{model=x;session.model=x;tui.setMeta({model:x});};
+  const setModel=x=>{const caps=client.capabilities?.(x);if(mode==='build'&&caps?.tools===false){tui?.add('notice',`Model ${x} does not advertise tool calling on ${providerConfig.label}.`);return false;}model=x;session.model=x;tui.setMeta({model:x});return true;};
+  const setProvider=async id=>{
+    const p=providers.get(id),credential=await resolveProviderApiKey(id,p);if(p.auth!==false&&!credential.key)throw new Error(`${p.label} is not authenticated. Run: craftcode auth login ${id}`);
+    const next=providers.create(id,{apiKey:credential.key,maxOutputTokens:config.maxOutputTokens,onRateLimit:client.onRateLimit}),ms=await next.models(),nextModel=pickDefaultModel(ms,id===providerId?model:'');
+    if(!nextModel)throw new Error(`No tool-capable model available from ${p.label}.`);
+    providerId=id;providerConfig=p;client=next;availableModels=ms;model=nextModel;session.client=client;session.model=model;agents.client=client;agents.model=pickSubagentModel(ms,model);
+    planResolved=resolveUsagePlan(config,client,providerId);usage.planTokens=planResolved.tokens;config.provider=id;config.model=model;await updateProjectConfig(cwd,{provider:id,model});
+    tui.setMeta({provider:id,model,planTokens:planResolved.tokens,planSource:planResolved.source});tui.setNotice(`Provider · ${p.label} · ${model}`,2200);return true;
+  };
   const setPermissions=preset=>{const p=PERMISSION_PRESETS[preset]||PERMISSION_PRESETS.ask;permissionPreset=preset in PERMISSION_PRESETS?preset:'ask';config.permissions.write=p.write;config.permissions.shell=p.shell;config.permissions.mcp=p.mcp;tui?.setMeta({permissionPreset});tui?.setNotice(`Permissions · ${p.label}`,1400);};
   const cyclePermissions=()=>{const order=['ask','edit','auto','locked'],i=order.indexOf(permissionPreset);setPermissions(order[(i+1)%order.length]);};
   const persistApproval=(kind,decision)=>{if(kind==='shell')config.permissions.shell=decision;if(kind==='write')config.permissions.write=decision;if(kind==='mcp')config.permissions.mcp=decision;permissionPreset=permissionPresetOf(config.permissions);tui?.setMeta({permissionPreset});};
@@ -201,7 +202,7 @@ async function main(){
       if(cmd==='/select'){tui.enterSelectionMode();return;}
       if(cmd==='/mouse'){const v=(rest[0]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /mouse on|off. Native terminal selection is the default.');tui.setMouseCapture(v==='on');return;}
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations. Vercel uses the Vercel CLI device-login flow because Vercel MCP restricts OAuth to approved clients. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /provider, /model, /mode, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations. Vercel uses the Vercel CLI device-login flow because Vercel MCP restricts OAuth to approved clients. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
@@ -211,9 +212,16 @@ async function main(){
         if(rest[0]&&['low','normal','high'].includes(rest[0].toLowerCase())){setEffort(rest[0].toLowerCase());return tui.setNotice(`Agent depth · ${rest[0]}`);}
         const chosen=await tui.pickEffort(effort);if(chosen){setEffort(chosen);tui.setNotice(`Agent depth · ${chosen}`);}return;
       }
+      if(cmd==='/providers'){
+        const rows=[];for(const p of providers.list()){const a=await resolveProviderApiKey(p.id,p);rows.push(`${p.id===providerId?'●':'○'} ${p.label} [${p.id}] · ${p.auth===false?'no key required':a.key?'authenticated':'not authenticated'} · ${p.baseUrl}`);}tui.add('assistant',rows.join('\n'));return;
+      }
+      if(cmd==='/provider'){
+        let id=(rest[0]||'').toLowerCase();if(!id){const items=[];for(const p of providers.list()){const a=await resolveProviderApiKey(p.id,p);items.push({id:p.id,label:p.label,meta:p.auth===false?'no key':a.key?'connected':'needs API key'});}id=await tui.pickProvider(items,providerId);if(!id)return;}
+        await setProvider(id);return;
+      }
       if(cmd==='/models'||cmd==='/model'){
-        if(arg&&cmd==='/model'){setModel(arg);return tui.setNotice(`Model · ${arg}`);}
-        const ms=await client.models(),chosen=await tui.pickModel(ms,model);if(chosen){setModel(chosen);tui.setNotice(`Model · ${chosen}`);}return;
+        if(arg&&cmd==='/model'){if(setModel(arg))tui.setNotice(`Model · ${arg}`);return;}
+        const ms=await client.models();availableModels=ms;const chosen=await tui.pickModel(ms,model);if(chosen&&setModel(chosen))tui.setNotice(`Model · ${chosen}`);return;
       }
       if(cmd==='/permissions'||cmd==='/permission'||cmd==='/perm'){
         const aliases={ask:'ask',safe:'ask',edit:'edit',auto:'auto',allow:'auto',locked:'locked',readonly:'locked','read-only':'locked'};
@@ -332,7 +340,7 @@ async function main(){
   };
 
   tui=new TerminalTui({
-    cwd,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,
+    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,
     onSubmit:runOne,onCommand:command,onCancel:()=>session.cancel(),onExit:exit,fileRefs:refs,showSplash,
     onModelsRequest:()=>client.models(),onModelPick:setModel,onModePick:setMode,onEffortPick:setEffort,onPermissionPick:setPermissions,onPermissionCycle:cyclePermissions,onPermissionDecision:persistApproval,onQuickAction:quickAction,
     startupMeta:{skills:skills.list().length,plugins:plugins.list().length,mcp:mcp.list().length,planName:client.planHint()?.name||'',rpm:client.rateLimits.rpmLimit||0}
