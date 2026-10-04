@@ -10,11 +10,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: npm-publish
+  group: npm-publish-v2
   cancel-in-progress: false
 
 jobs:
   publish:
+    timeout-minutes: 10
     if: "${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'release: publish npm') }}"
     runs-on: ubuntu-latest
     steps:

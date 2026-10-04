@@ -107,8 +107,12 @@ import { AgentManager } from '../src/agents.mjs';
 import { McpManager } from '../src/mcp.mjs';
 
 test('OAuth loopback callback captures authorization code', async()=>{
-  const name='test-'+Math.random().toString(36).slice(2);const p=await new PersistentOAuthProvider(name).load();await p.startCallback();
-  const wait=p.waitForCode(2000);await fetch(`${p.callbackUrl}?code=abc123&iss=test`);const r=await wait;assert.equal(r.code,'abc123');assert.equal(r.iss,'test');await p.close();await p.clear();
+  const name='test-'+Math.random().toString(36).slice(2);const p=await new PersistentOAuthProvider(name).load();
+  try{
+    await p.startCallback();const state=await p.state(),wait=p.waitForCode(2000);
+    await fetch(`${p.callbackUrl}?code=abc123&iss=test&state=${encodeURIComponent(state)}`);
+    const r=await wait;assert.equal(r.code,'abc123');assert.equal(r.iss,'test');assert.equal(r.state,state);
+  }finally{await p.close();await p.clear();}
 });
 
 test('Claude plugin commands and skills are discovered lazily',async()=>{
