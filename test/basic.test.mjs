@@ -70,14 +70,14 @@ test('thinking is represented inline in transcript',()=>{
 });
 
 test('footer exposes interactive usage mode model and effort regions',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'claude-opus-5',mode:'build',effort:'high',usage:fakeUsage(),resetDay:4,showSplash:false,startupMeta:{mcp:2}});tui.schedule=()=>{};let frame=[];tui.paintFrame=lines=>{frame=lines;};
+  const tui=new TerminalTui({cwd:process.cwd(),model:'claude-opus-5',mode:'build',effort:'high',usage:fakeUsage(),resetDay:4,showSplash:false,mouseCapture:true,startupMeta:{mcp:2}});tui.schedule=()=>{};let frame=[];tui.paintFrame=lines=>{frame=lines;};
   tui.renderChat();const actions=new Set(tui.regions.map(r=>r.action));
   for(const a of ['usage','plus','attach','mode','model','effort','connectors'])assert.ok(actions.has(a),`missing ${a}`);
   assert.ok(frame.some(x=>String(x).includes('Ask anything')));
 });
 
 test('mouse hit testing activates interactive footer pill',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.regions=[{x1:3,x2:20,y:30,action:'usage'}];
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,mouseCapture:true,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.regions=[{x1:3,x2:20,y:30,action:'usage'}];
   tui.handleMouse('\x1b[<0;5;30M');assert.equal(tui.modal?.type,'usage');
 });
 
@@ -90,7 +90,7 @@ test('CodeCraft RPM plan hint maps Starter to 30M',async()=>{
 });
 
 test('permission pill and picker are exposed',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',permissionPreset:'ask',usage:fakeUsage(),showSplash:false,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.paintFrame=()=>{};tui.renderChat();
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',permissionPreset:'ask',usage:fakeUsage(),showSplash:false,mouseCapture:true,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.paintFrame=()=>{};tui.renderChat();
   assert.ok(tui.regions.some(r=>r.action==='permissions'));
 });
 
@@ -210,8 +210,8 @@ test('package exposes both executable CLI bins', async()=>{
 });
 
 
-test('mouse wheel scrolls internal conversation history',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+test('mouse wheel scrolls internal conversation history when mouse UI is enabled',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,mouseCapture:true});tui.schedule=()=>{};
   tui.handleMouse('\x1b[<64;10;10M');
   assert.equal(tui.scrollOffset,5);
   tui.handleMouse('\x1b[<65;10;10M');
@@ -227,9 +227,11 @@ test('edit tool cards render an inline red-green diff preview',()=>{
   assert.match(rendered,/\+ const x = 2;/);
 });
 
-test('Select mode is exposed as an interactive footer action',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.paintFrame=()=>{};tui.renderChat();
-  assert.ok(tui.regions.some(r=>r.action==='select'));
+test('Select command remains available while native selection is default',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  tui.input='/sel';
+  assert.ok(tui.commandSuggestions().some(x=>x.cmd==='/select'));
+  assert.equal(tui.mouseCapture,false);
 });
 
 
