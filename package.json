@@ -1,6 +1,6 @@
 {
   "name": "craftcode-codecraft",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "CodeCraft-native terminal coding and research agent with a full-screen TUI, resumable sessions, subagents, skills, plugins, MCP connectors, permissions and token guards.",
   "type": "module",
   "bin": {

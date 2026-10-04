@@ -105,11 +105,11 @@ async function vercelInteractiveLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
-  if(version){console.log('Craft Code 0.9.5');return;}
+  if(version){console.log('Craft Code 0.9.6');return;}
   if(action==='auth'){await handleAuth(actionArg);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.5');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.6');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -151,7 +151,7 @@ async function main(){
     onCheckpoint:cp=>{tui?.setCheckpoint(cp.id);tui?.setNotice('Checkpoint ready · Undo available',1800);},
     onTurnEnd:()=>tui?.setBusy(false)
   };
-  client.onRateLimit=({retryMs,tpmLimit,tpmRemaining})=>{const secs=Math.max(1,Math.ceil(retryMs/1000));tui?.setActivity('Rate limit');tui?.setNotice(`TPM limit · retrying in ${secs}s${tpmLimit?` · ${fmtTokens(tpmRemaining||0)}/${fmtTokens(tpmLimit)} remaining`:''}`,Math.min(retryMs,10000));};
+  client.onRateLimit=({retryMs,tpmLimit,tpmRemaining,proactive})=>{const secs=Math.max(1,Math.ceil(retryMs/1000));tui?.setActivity(proactive?'Pacing requests':'Rate limit');tui?.setNotice(`${proactive?'TPM pacing':'TPM limit'} · ${proactive?'waiting':'retrying'} ${secs}s${tpmLimit?` · ${fmtTokens(tpmRemaining||0)}/${fmtTokens(tpmLimit)} remaining`:''}`,Math.min(Math.max(retryMs,1800),30000));};
   session=new AgentSession({client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,projectInstructions});
   session.clear();
   const startupHookContext=await plugins.hook('session.start',{cwd});if(startupHookContext?.length)session.setPluginContext(startupHookContext);
@@ -171,8 +171,8 @@ async function main(){
   };
   const currentStatus=async()=>{
     let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}
-    const u=usage.snapshot(),ctx=session.contextStats(),connected=mcp.list().filter(x=>x.connected).map(x=>x.name),title=store.currentTitle||'Untitled session';
-    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n- **Model:** \`${session.model}\`\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)} tokens · ${ctx.messages} messages\n- **Usage:** ${fmtTokens(u.total)} used · ${u.plan===Infinity?'Unlimited':fmtTokens(Math.max(0,u.plan-u.total))+' remaining'}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
+    const u=usage.snapshot(),ctx=session.contextStats(),connected=mcp.list().filter(x=>x.connected).map(x=>x.name),title=store.currentTitle||'Untitled session',rate=client.rateProfile();
+    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n- **Model:** \`${session.model}\`\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)} tokens · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Usage:** ${fmtTokens(u.total)} used · ${u.plan===Infinity?'Unlimited':fmtTokens(Math.max(0,u.plan-u.total))+' remaining'}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
   };
 
   const runOne=async(raw,{implementing=false}={})=>{
@@ -273,7 +273,7 @@ async function main(){
         const sub=(rest[0]||'').toLowerCase();if(sub==='spawn'){const role=(rest[1]||'explorer').toLowerCase(),task=rest.slice(2).join(' ');if(!task)return tui.add('notice','Use /agent spawn <explorer|tester|reviewer|researcher|writer> <task>.');const j=await agents.spawn({role,task,worktree:role==='writer'});tui.setNotice(`Spawned ${j.id}`);return;}if(sub==='show'&&rest[1]){const j=agents.list().find(x=>x.id===rest[1]);if(!j)return tui.add('notice','Unknown agent id.');return tui.add('assistant',`${j.id} · ${j.role} · ${j.status} · ${fmtTokens(j.used||0)}/${fmtTokens(j.budget)}\n\n${j.result||j.error||'Still working…'}`);}if(sub==='apply'&&rest[1]){if(!await tui.askApproval('write',`Apply patch from ${rest[1]} to main workspace?`))return;const r=await agents.apply(rest[1]);tui.add(r.ok?'assistant':'notice',r.message);return;}return command('/agents');
       }
       if(cmd==='/team'){
-        const n=/^\d+$/.test(rest[0]||'')?Math.max(1,Math.min(6,Number(rest.shift()))):Math.min(3,config.agents?.maxParallel||3),task=rest.join(' ');if(!task)return tui.add('notice','Use /team [1-6] <task>.');tui.setNotice(`Launching ${n} bounded subagents…`,0);const rs=await agents.team({task,count:n});tui.add('assistant',`Parallel agent results\n\n${agents.summary(rs)}`);tui.setNotice(`${n} agents completed`,1800);return;
+        const n=/^\d+$/.test(rest[0]||'')?Math.max(1,Math.min(6,Number(rest.shift()))):Math.min(3,config.agents?.maxParallel||3),task=rest.join(' ');if(!task)return tui.add('notice','Use /team [1-6] <task>.');const parallel=agents.parallelLimit();tui.setNotice(`Launching ${n} agents · up to ${Math.min(n,parallel)} concurrent for current TPM…`,0);const rs=await agents.team({task,count:n});tui.add('assistant',`Parallel agent results\n\n${agents.summary(rs)}`);tui.setNotice(`${n} agents completed`,1800);return;
       }
       if(cmd==='/bash'){if(!arg)return tui.add('notice','Use !<command> or /bash <command>.');const r=await tools.execute('run_command',{command:arg},mode);tui.add('assistant','```text\n'+String(r||'')+'\n```');return;}
       if(cmd==='/diff'){const r=await tools.execute('git_diff',{staged:false},'plan');tui.add('assistant',r||'No diff.');return;}

@@ -289,3 +289,25 @@ test('vercel_api is exposed as a first-class agent tool',()=>{
   const registry=new ToolRegistry({cwd:process.cwd(),config:{permissions:{mcp:'ask'},ignore:[],tokenGuard:{}},skills,plugins,mcp,askFn:async()=>true});
   assert.ok(registry.definitions('build').some(x=>x.function?.name==='vercel_api'));
 });
+
+
+test('CodeCraft estimates request tokens and exposes live rate profile',()=>{
+  const c=new CodeCraftClient({apiKey:'x',baseUrl:'https://x/v1',maxOutputTokens:8192});
+  c.rateLimits={tpmLimit:500000,tpmRemaining:420000,rpmLimit:300,rpmRemaining:299,reset:null};
+  assert.ok(c.estimateRequestTokens([{role:'user',content:'hello'}],[])>=4096);
+  assert.equal(c.rateProfile().tpmLimit,500000);
+});
+
+test('fallback 429 retry no longer hard-waits 60 seconds',async()=>{
+  const oldFetch=globalThis.fetch,enc=new TextEncoder();let calls=0,wait=0;
+  globalThis.fetch=async()=>{calls++;if(calls===1)return new Response('limited',{status:429,headers:{'x-ratelimit-limit-tokens':'200000','x-ratelimit-remaining-tokens':'0'}});return new Response(new ReadableStream({start(c){c.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'ok'},finish_reason:'stop'}],usage:{total_tokens:2}})+'\n\ndata: [DONE]\n\n'));c.close();}}),{status:200});};
+  try{const c=new CodeCraftClient({apiKey:'x',baseUrl:'https://x/v1',onRateLimit:x=>{wait=x.retryMs;}});c._waitGate=async()=>{c.rateGate=0;};await c.stream({model:'m',messages:[],tools:[]});assert.ok(wait>0&&wait<=15000);assert.equal(calls,2);}finally{globalThis.fetch=oldFetch;}
+});
+
+test('subagent parallelism adapts to TPM ceiling',()=>{
+  const common={model:'m',cwd:process.cwd(),config:{agents:{maxParallel:4}},usage:{},skills:{},plugins:{},mcp:{}};
+  assert.equal(new AgentManager({...common,client:{rateLimits:{tpmLimit:200000}}}).parallelLimit(),1);
+  assert.equal(new AgentManager({...common,client:{rateLimits:{tpmLimit:500000}}}).parallelLimit(),2);
+  assert.equal(new AgentManager({...common,client:{rateLimits:{tpmLimit:1000000}}}).parallelLimit(),3);
+  assert.equal(new AgentManager({...common,client:{rateLimits:{tpmLimit:2000000}}}).parallelLimit(),4);
+});

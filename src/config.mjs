@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 11,
+  configVersion: 12,
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
   // "auto" infers the CodeCraft tier from X-RateLimit-Limit. Set a number to override.
@@ -16,7 +16,7 @@ const defaults = {
   defaultEffort: 'high',
   maxAgentSteps: 20,
   maxOutputTokens: 8192,
-  autoCompactChars: 500_000,
+  autoCompactChars: 300_000,
   tokenGuard: {
     enabled: true,
     warnRequestTokens: 500_000,
@@ -36,8 +36,8 @@ const defaults = {
   agents: {
     enabled: true,
     maxParallel: 4,
-    defaultBudgetTokens: 250000,
-    maxSteps: 10,
+    defaultBudgetTokens: 120000,
+    maxSteps: 8,
     keepWorktrees: false
   },
   claudePlugins: {

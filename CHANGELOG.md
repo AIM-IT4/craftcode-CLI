@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.6
+
+- Added adaptive CodeCraft TPM pacing before requests so concurrent agents avoid preventable 429 bursts.
+- Removed the crude 60-second fallback wait; retries now honor Retry-After / rate-reset headers and use short exponential fallback only when the server omits both.
+- Added TPM-aware context compaction and older tool-output trimming to stop large coding sessions from resending oversized context every tool loop.
+- Parallel subagents now adapt concurrency to the live CodeCraft TPM tier (1 at 200k, 2 at 500k, 3 at 1M, configured maximum above that) while still completing the full requested team.
+- Reduced default subagent token budget to 120k and default subagent steps to 8.
+- `/status` now shows the live TPM/RPM limits and remaining token window reported by CodeCraft.
+
 ## 0.9.5
 
 - Replaced unsupported direct Vercel MCP OAuth with Vercel's supported CLI device-login flow for `/connect vercel`.

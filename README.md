@@ -170,9 +170,9 @@ Craft Code was built to avoid common agent-token waste:
 - lazy skill loading;
 - lazy MCP tool-schema discovery;
 - context compaction;
-- per-agent budgets;
+- per-agent budgets and TPM-aware parallelism;
 - visible request/session/day/month usage;
-- automatic handling of CodeCraft `Retry-After` responses.
+- adaptive CodeCraft TPM pacing using live rate-limit headers, `Retry-After`/reset-aware retries, and TPM-aware subagent concurrency.
 
 > [!IMPORTANT]
 > The plan allowance shown in Craft Code is inferred from CodeCraft rate-limit metadata when possible. Historical usage outside Craft Code cannot be reconstructed from the public API, so use `/usage set <tokens>` if you need to reconcile the local counter with your CodeCraft dashboard.
