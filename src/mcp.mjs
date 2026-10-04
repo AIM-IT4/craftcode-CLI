@@ -59,7 +59,7 @@ export class McpManager {
     if (this.clients.has(name)) return this.clients.get(name);
     const raw=this.configs[name]; if (!raw) throw new Error(`Unknown MCP server: ${name}`);
     const c=expandEnv(raw); const sdk=await this._sdk(); const {Client,StreamableHTTPClientTransport,StdioClientTransport}=sdk;
-    const makeClient=()=>new Client({name:'craft-code',version:'0.9.3'});
+    const makeClient=()=>new Client({name:'craft-code',version:'0.9.5'});
     let client=makeClient(),transport,oauthProvider=null;
     try{
       if ((c.type||'http') === 'stdio') {
@@ -98,7 +98,7 @@ export class McpManager {
   }
   async authenticate(name){const x=await this.connect(name,{interactive:true});return {connected:!!x,name};}
   async logout(name){const x=this.clients.get(name);if(x){try{await x.client.close();}catch{}this.clients.delete(name);}const p=await new PersistentOAuthProvider(name).load();await p.clear();return true;}
-  async tools(name) { try{const {client}=await this.connect(name);const r=await client.listTools();return r.tools||[];}catch(e){const c=expandEnv(this.configs[name]||{});throw new Error(describeMcpError(name,e,c),{cause:e});} }
-  async call(name, toolName, args) { try{const {client}=await this.connect(name);return await client.callTool({name:toolName,arguments:args||{}});}catch(e){const c=expandEnv(this.configs[name]||{});this.clients.delete(name);throw new Error(describeMcpError(name,e,c),{cause:e});} }
+  async tools(name) { const c=expandEnv(this.configs[name]||{});if(c.type==='cli')return[];try{const {client}=await this.connect(name);const r=await client.listTools();return r.tools||[];}catch(e){throw new Error(describeMcpError(name,e,c),{cause:e});} }
+  async call(name, toolName, args) { const c=expandEnv(this.configs[name]||{});if(c.type==='cli')throw new Error(`${name} uses a native CLI bridge, not MCP tools.`);try{const {client}=await this.connect(name);return await client.callTool({name:toolName,arguments:args||{}});}catch(e){this.clients.delete(name);throw new Error(describeMcpError(name,e,c),{cause:e});} }
   async closeAll() { for (const {client,oauthProvider} of this.clients.values()) { try { await client.close(); } catch {} try{await oauthProvider?.close();}catch{} } this.clients.clear(); }
 }
