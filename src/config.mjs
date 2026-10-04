@@ -161,3 +161,8 @@ export function normalizeProviderConfig(config={}){
   if(config.baseUrl)providers.codecraft={...providers.codecraft,baseUrl:config.baseUrl};
   return{...config,provider,providers,model:config.model||''};
 }
+
+
+export function providerLoginPatch(providerArg,providerId){
+  return String(providerArg||'').trim()?{provider:String(providerId||'').trim()}:null;
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig,normalizeProviderConfig} from './config.mjs';
+import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig,updateGlobalConfig,normalizeProviderConfig,providerLoginPatch} from './config.mjs';
 import {ProviderRegistry} from './providers/index.mjs';
 import {UsageTracker} from './usage.mjs';
 import {SkillRegistry} from './skills.mjs';
@@ -51,11 +51,11 @@ async function runUpdate(){
 async function handleAuth(actionArg,providerArg,cwd){
   await writeStarterConfig();const config=normalizeProviderConfig(await loadConfig(cwd)),registry=new ProviderRegistry(config),providerId=providerArg||registry.activeId(),p=registry.get(providerId);
   if(actionArg==='login'){
-    if(p.auth===false){console.log(`${p.label} does not require an API key.`);return;}
+    if(p.auth===false){const patch=providerLoginPatch(providerArg,providerId);if(patch)await updateGlobalConfig(patch);console.log(`${p.label} does not require an API key.${patch?' Set as active provider.':''}`);return;}
     const key=await promptSecret(`${p.label} API key`);if(!key)throw new Error('No API key entered.');
     process.stdout.write(`Validating with ${p.label}… `);const probe=registry.create(providerId,{apiKey:key,maxOutputTokens:8});
     try{await probe.models();}catch(e){console.log('failed');throw new Error(`${p.label} rejected the key: ${e.message}`);}
-    const file=await saveProviderApiKey(providerId,key);console.log('ok');console.log(`Saved ${p.label} credential: ${file}`);return;
+    const file=await saveProviderApiKey(providerId,key),patch=providerLoginPatch(providerArg,providerId);if(patch)await updateGlobalConfig(patch);console.log('ok');console.log(`Saved ${p.label} credential: ${file}${patch?' · active provider set to '+providerId:''}`);return;
   }
   if(actionArg==='logout'){await clearProviderApiKey(providerId);console.log(`Stored ${p.label} API key removed.`);return;}
   const a=await resolveProviderApiKey(providerId,p);console.log(`${p.label} auth: ${p.auth===false?'not required':a.key?'configured':'not configured'}`);console.log(`Source: ${p.auth===false?'none required':a.source}`);if(a.key)console.log(`Key: ${maskKey(a.key)}`);console.log(`Credential file: ${AUTH_FILE}`);
