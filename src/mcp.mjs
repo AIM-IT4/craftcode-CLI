@@ -27,13 +27,24 @@ export function describeMcpError(name,error,config={}){
     if(config.command==='docker')return `${label} connector stopped during startup. Make sure Docker Desktop is installed and running, then retry \`/connect ${label}\`.`;
     return `${label} connector closed the connection during startup. Retry \`/connect ${label}\`; if it persists, check the server URL and authentication.`;
   }
+  if(config.authHint&&/requires a token|authentication|unauthor|forbidden|401|403/i.test(message))return `${label} connector: ${config.authHint}`;
   if(/unauthor|forbidden|401|403/i.test(message))return `${label} connector authentication was rejected. Run \`/disconnect ${label}\` and then \`/connect ${label}\` to authorize again.`;
   return `${label} connector failed: ${message}`;
 }
 
+async function resolveBearer(c){
+  if(c.bearerToken)return c.bearerToken;
+  if(c.tokenEnv&&process.env[c.tokenEnv])return process.env[c.tokenEnv];
+  if(c.tokenCommand){
+    const [command,...args]=Array.isArray(c.tokenCommand)?c.tokenCommand:String(c.tokenCommand).split(/\s+/);
+    if(await commandAvailable(command)){try{return (await execFileP(command,args,{windowsHide:true,timeout:10000,maxBuffer:200000})).stdout.trim();}catch{}}
+  }
+  return '';
+}
+
 export class McpManager {
   constructor(serverConfigs = {}, catalog = {}) { this.baseConfigs={...catalog,...serverConfigs};this.configs = {...this.baseConfigs}; this.clients = new Map(); this.catalog = catalog; this.pluginNames=new Set(); }
-  list() { return Object.entries(this.configs).map(([name,c]) => ({name, type:c.type||'http', connected:this.clients.has(name), url:c.url, oauth:!!c.oauth, browserOAuth:!!c.browserOAuth, requirement:c.requirement||((c.command==='docker')?'Docker Desktop':'')})); }
+  list() { return Object.entries(this.configs).map(([name,c]) => ({name, type:c.type||'http', connected:this.clients.has(name), url:c.url, oauth:!!c.oauth, browserOAuth:!!c.browserOAuth, requirement:c.requirement||'', authHint:c.authHint||''})); }
   add(name,config){this.configs[name]=config;return this.configs[name];}
   setPluginConfigs(configs={}){for(const n of this.pluginNames){delete this.configs[n];}this.pluginNames.clear();for(const [n,c] of Object.entries(configs||{})){this.configs[n]=c;this.pluginNames.add(n);}return this;}
   remove(name){delete this.configs[name];const x=this.clients.get(name);if(x){try{x.client.close();}catch{}this.clients.delete(name);} }
@@ -48,29 +59,34 @@ export class McpManager {
     if (this.clients.has(name)) return this.clients.get(name);
     const raw=this.configs[name]; if (!raw) throw new Error(`Unknown MCP server: ${name}`);
     const c=expandEnv(raw); const sdk=await this._sdk(); const {Client,StreamableHTTPClientTransport,StdioClientTransport}=sdk;
-    const client=new Client({name:'craft-code',version:'0.9.1'});
-    let transport,oauthProvider=null;
+    const makeClient=()=>new Client({name:'craft-code',version:'0.9.3'});
+    let client=makeClient(),transport,oauthProvider=null;
     try{
       if ((c.type||'http') === 'stdio') {
         if(!await commandAvailable(c.command)){const e=new Error(`${c.command||'connector command'} not found`);e.code='ENOENT';throw e;}
         transport=new StdioClientTransport({command:c.command,args:c.args||[],env:{...process.env,...(c.env||{})},cwd:c.cwd,stderr:'ignore'});
         await client.connect(transport);
       } else {
-        const opts={requestInit:{headers:c.headers||{}}};
+        const headers={...(c.headers||{})};
+        const bearer=await resolveBearer(c);
+        if(bearer)headers.Authorization=`Bearer ${bearer}`;
+        if(c.tokenRequired&&!bearer)throw new Error(c.authHint||`${name} requires a token. Configure ${c.tokenEnv||'a bearer token'} first.`);
+        const opts={requestInit:{headers}};
         if(c.oauth){
           oauthProvider=await new PersistentOAuthProvider(name).load();
           await oauthProvider.startCallback();
           opts.authProvider=oauthProvider;
-        } else if(c.bearerToken){
-          opts.authProvider={token:async()=>c.bearerToken};
         }
-        transport=new StreamableHTTPClientTransport(new URL(c.url),opts);
+        const url=new URL(c.url);
+        transport=new StreamableHTTPClientTransport(url,opts);
         try{await client.connect(transport);}catch(e){
           const unauthorized=(sdk.UnauthorizedError&&e instanceof sdk.UnauthorizedError)||e?.name==='UnauthorizedError'||/unauthor/i.test(String(e?.message||''));
           if(!unauthorized||!oauthProvider||!interactive)throw e;
-          const {code}=await oauthProvider.waitForCode();
-          if(typeof transport.finishAuth!=='function')throw new Error('Installed MCP client SDK does not expose finishAuth(); update @modelcontextprotocol/client.');
-          await transport.finishAuth(code);
+          const callback=await oauthProvider.waitForCode();
+          await transport.finishAuth(callback.params);
+          try{await client.close();}catch{}
+          client=makeClient();
+          transport=new StreamableHTTPClientTransport(url,opts);
           await client.connect(transport);
         }
       }

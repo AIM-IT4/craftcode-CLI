@@ -227,3 +227,24 @@ test('Select mode is exposed as an interactive footer action',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.paintFrame=()=>{};tui.renderChat();
   assert.ok(tui.regions.some(r=>r.action==='select'));
 });
+
+
+test('OAuth provider exposes callable state instead of shadowing it with storage', async()=>{
+  const name='oauth-state-'+Math.random().toString(36).slice(2),p=await new PersistentOAuthProvider(name).load();
+  try{assert.equal(typeof p.state,'function');const s=await p.state();assert.ok(s.length>=20);assert.equal(p.lastState,s);p.validateState(s);assert.equal(p.lastState,'');}finally{await p.close();await p.clear();}
+});
+
+test('connector catalog uses hosted GitHub MCP and exposes Playwright browser', async()=>{
+  const {loadConfig}=await import('../src/config.mjs');const c=await loadConfig(process.cwd());
+  assert.equal(c.connectorCatalog.github.type,'http');
+  assert.match(c.connectorCatalog.github.url,/api\.githubcopilot\.com\/mcp/);
+  assert.equal(c.connectorCatalog.playwright.command,'npx');
+  assert.ok(c.connectorCatalog.playwright.args.includes('@playwright/mcp@latest'));
+});
+
+test('public GitHub repo URL parser rejects local/non-GitHub targets', async()=>{
+  const {parseGitHubRepoUrl}=await import('../src/web_tools.mjs');
+  assert.deepEqual(parseGitHubRepoUrl('https://github.com/AIM-IT4/craftcode-CLI'),{owner:'AIM-IT4',repo:'craftcode-CLI'});
+  assert.throws(()=>parseGitHubRepoUrl('http://127.0.0.1:3000/x'),/blocked/i);
+  assert.throws(()=>parseGitHubRepoUrl('https://example.com/x/y'),/github\.com/i);
+});

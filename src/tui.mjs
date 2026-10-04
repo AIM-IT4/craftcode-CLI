@@ -41,7 +41,8 @@ const COMMANDS=[
   {cmd:'/skills',desc:'Show discovered skills'},
   {cmd:'/plugins',desc:'Show plugins'},
   {cmd:'/mcp',desc:'Show connectors'},
-  {cmd:'/connect',desc:'OAuth-connect GitHub / Vercel / Supabase'},
+  {cmd:'/connect',desc:'Connect GitHub / Vercel / Supabase / Playwright'},
+  {cmd:'/browser',desc:'Start Playwright Chromium or inspect a URL'},
   {cmd:'/agents',desc:'Show parallel subagents'},
   {cmd:'/agent',desc:'Spawn a bounded subagent'},
   {cmd:'/team',desc:'Run multiple agents in parallel'},
@@ -189,7 +190,7 @@ export class TerminalTui{
   pickEffort(current=this.effort){return this.openPicker('effort','Agent depth',[{id:'low',label:'Low',meta:'fast · fewer tool loops'},{id:'normal',label:'Normal',meta:'balanced'},{id:'high',label:'High',meta:'deeper verification'}],current);}
   pickPermissions(current=this.permissionPreset){return this.openPicker('permissions','Permissions',[{id:'ask',label:'Ask',meta:'ask before edits · commands · MCP actions'},{id:'edit',label:'Edit',meta:'allow edits · ask commands/MCP'},{id:'auto',label:'Auto',meta:'allow edits · commands · MCP actions'},{id:'locked',label:'Read only',meta:'deny edits · commands · MCP actions'}],current);}
   pickSession(rows=[]){return this.openPicker('session','Resume session',rows.map(x=>({id:x.id,label:x.title||x.id,meta:`${x.turns} turns · ${x.mode} · ${String(x.updatedAt||'').slice(0,16).replace('T',' ')}`})),rows[0]?.id||'');}
-  pickConnector(items=[]){return this.openPicker('connector','Connect service',(items||[]).map(x=>({id:x.name,label:x.name,meta:x.connected?'connected':`${x.oauth||x.browserOAuth?'browser OAuth':x.type}${x.requirement?` · needs ${x.requirement}`:''}`})));}
+  pickConnector(items=[]){return this.openPicker('connector','Connect / start service',(items||[]).map(x=>({id:x.name,label:x.name,meta:x.connected?'connected':`${x.oauth||x.browserOAuth?'browser OAuth':x.type}${x.requirement?` · needs ${x.requirement}`:''}`})));}
   openQuickActions(){return this.openPicker('quick','Add to prompt',[{id:'attach',label:'Attach file',meta:'insert @ and search workspace'},{id:'connectors',label:'Connectors',meta:'OAuth / MCP servers'},{id:'agents',label:'Agents',meta:'parallel bounded workers'},{id:'skills',label:'Skills',meta:'reusable workflows'},{id:'plugins',label:'Plugins',meta:'extensions'},{id:'compact',label:'Compact context',meta:'save tokens'},{id:'new',label:'New session',meta:'clear current conversation'}]);}
   openPicker(type,title,items,current){return new Promise(resolve=>{this.modal={type,title,items,index:Math.max(0,items.findIndex(x=>x.id===current)),filter:'',resolve};this.schedule();});}
   openUsage(){this.modal={type:'usage',title:'Usage',resolve:()=>{}};this.schedule();}

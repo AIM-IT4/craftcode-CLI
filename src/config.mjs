@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 9,
+  configVersion: 10,
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
   // "auto" infers the CodeCraft tier from X-RateLimit-Limit. Set a number to override.
@@ -55,7 +55,20 @@ const defaults = {
   connectorCatalog: {
     supabase: { type: 'http', url: 'https://mcp.supabase.com/mcp', oauth: true },
     vercel: { type: 'http', url: 'https://mcp.vercel.com', oauth: true },
-    github: { type: 'stdio', command: 'docker', args: ['run','-i','--rm','-p','127.0.0.1:8085:8085','-e','GITHUB_OAUTH_CALLBACK_PORT','ghcr.io/github/github-mcp-server'], env: { GITHUB_OAUTH_CALLBACK_PORT: '8085' }, browserOAuth: true }
+    github: {
+      type: 'http',
+      url: 'https://api.githubcopilot.com/mcp/',
+      tokenEnv: 'GITHUB_TOKEN',
+      tokenCommand: ['gh','auth','token'],
+      tokenRequired: true,
+      authHint: 'use an existing GitHub credential: run gh auth login once (recommended) or set GITHUB_TOKEN, then retry /connect github.'
+    },
+    playwright: {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y','@playwright/mcp@latest'],
+      requirement: 'Node.js; Chromium downloads automatically on first use'
+    }
   }
 };
 

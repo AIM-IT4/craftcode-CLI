@@ -79,11 +79,11 @@ const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth(
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg}=parseArgs();
-  if(version){console.log('Craft Code 0.9.2');return;}
+  if(version){console.log('Craft Code 0.9.3');return;}
   if(action==='auth'){await handleAuth(actionArg);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
-    const auth=await resolveApiKey();console.log('Craft Code 0.9.2');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
+    const auth=await resolveApiKey();console.log('Craft Code 0.9.3');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`CodeCraft auth: ${auth.key?'configured':'missing'} (${auth.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -174,7 +174,7 @@ async function main(){
       if(cmd==='/exit'||cmd==='/quit')return await exit();
       if(cmd==='/select')return tui.enterSelectionMode();
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nMouse wheel or PgUp/PgDn scrolls conversation history · /select releases mouse capture for drag-select + Ctrl+C\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect opens OAuth MCP login. Shift+Tab cycles permission presets. Footer pills are clickable in Windows Terminal.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nMouse wheel or PgUp/PgDn scrolls conversation history · /select releases mouse capture for drag-select + Ctrl+C\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /mode, /model, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages MCP integrations. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer pills are clickable in Windows Terminal.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
@@ -215,6 +215,12 @@ async function main(){
         if(sub==='available'){return tui.add('assistant',marketplace.available().map(x=>`${x.name}@${x.marketplace}${x.version?` ${x.version}`:''} — ${x.description}`).join('\n')||'No marketplace plugins discovered.');}
         if(sub==='hooks'){const on=(rest[1]||'').toLowerCase()==='on';if(on&&!await tui.askApproval('shell','Enable installed Claude-plugin lifecycle hooks? Hooks can execute local commands.'))return tui.setNotice('Plugin hooks remain off.');plugins.setClaudeHooks(on);config.claudePlugins.allowHooks=on;if(on){const x=await plugins.hook('session.start',{cwd});if(x?.length)session.setPluginContext(x);}return tui.setNotice(`Claude plugin hooks · ${on?'ON (trusted plugins only)':'OFF'}`);}
         if(arg){plugins.activate(arg);return tui.setNotice(`Activated plugin ${arg}`);}return command('/plugins');
+      }
+      if(cmd==='/browser'){
+        const sub=(rest[0]||'').toLowerCase();
+        if(sub==='connect'||sub==='start'||!sub){tui.setNotice('Starting Playwright Chromium connector…',0);try{await mcp.authenticate('playwright');tui.setNotice('Playwright browser connected',2200);const ts=await mcp.tools('playwright');return tui.add('assistant',`Playwright Chromium is connected with ${ts.length} browser tools. Ask Craft Code to open or navigate a URL; browser tool schemas stay lazy until needed.\n\nPublic GitHub repository links do not need a browser: paste the link and Craft Code can inspect the README/tree directly.`);}catch(e){return tui.add('notice',e.message||String(e));}}
+        if(/^https?:\/\//i.test(arg)){tui.add('user',arg);await runOne(`Inspect this URL carefully and summarize what is relevant: ${arg}`);return;}
+        return tui.add('assistant','Use /browser to start Playwright Chromium, or paste a public URL directly. Public GitHub repo URLs work without a browser through inspect_repo_url.');
       }
       if(cmd==='/mcp'){
         if(rest[0]==='tools'&&rest[1]){const ts=await mcp.tools(rest[1]);tui.add('assistant',ts.map(t=>`${t.name} — ${t.description||''}`).join('\n')||'No tools.');}

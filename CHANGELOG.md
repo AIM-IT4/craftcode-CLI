@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.3
+
+- Fixed MCP OAuth provider compatibility with the current SDK: callable state, callback-state validation, discovery-state persistence, and fresh post-OAuth HTTP transport.
+- Replaced Docker-first GitHub connector defaults with GitHub's hosted MCP endpoint using an existing GitHub CLI token or GITHUB_TOKEN.
+- Added zero-install public URL and GitHub repository inspection tools; repository links can be understood directly without cloning.
+- Added the official Microsoft Playwright MCP connector and /browser command for Chromium automation.
+- Parallel read-only subagents inherit URL/repository inspection tools for concurrent research.
+- Added the Craft Code GitHub Pages website and deployment workflow.
+
 ## 0.9.2
 
 - Added mouse-wheel scrolling for conversation history inside the full-screen TUI.
