@@ -538,3 +538,44 @@ test('provider status summary names provider and never calls observed usage Unli
   assert.match(s,/provider plan not reported/i);
   assert.doesNotMatch(s,/Unlimited/);
 });
+
+
+test('CodeCraft provider preserves normalized streaming and plan hints', async()=>{
+  const {CodeCraftProvider}=await import('../src/providers/codecraft.mjs');
+  const oldFetch=globalThis.fetch,enc=new TextEncoder();
+  globalThis.fetch=async()=>new Response(new ReadableStream({start(controller){
+    controller.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'hi '},finish_reason:null}]})+'\n\n'));
+    controller.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'c1',function:{name:'read_file',arguments:'{"path":"README.md"}'}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:10,completion_tokens:2,total_tokens:12}})+'\n\n'));
+    controller.enqueue(enc.encode('data: [DONE]\n\n'));controller.close();
+  }}),{status:200,headers:{'x-ratelimit-limit':'120','x-ratelimit-limit-tokens':'500000','x-ratelimit-remaining-tokens':'499000'}});
+  try{
+    const p=new CodeCraftProvider({apiKey:'x'});
+    let out='';const r=await p.stream({model:'m',messages:[{role:'user',content:'x'}],tools:[],onText:t=>out+=t});
+    assert.equal(out,'hi ');
+    assert.equal(r.message.tool_calls[0].function.name,'read_file');
+    assert.equal(r.finishReason,'tool_calls');
+    assert.deepEqual(p.planHint(),{name:'Starter',tokens:30_000_000,rpm:120});
+    assert.equal(p.rateProfile().tpmLimit,500000);
+  }finally{globalThis.fetch=oldFetch;}
+});
+
+test('shared OpenAI-compatible provider lists models and honors AbortSignal',async()=>{
+  const {OpenAICompatibleProvider}=await import('../src/providers/openai-compatible.mjs');
+  const oldFetch=globalThis.fetch;
+  globalThis.fetch=async(url,{signal}={})=>{
+    if(String(url).endsWith('/models'))return new Response(JSON.stringify({data:[{id:'model-a'}]}),{status:200,headers:{'content-type':'application/json'}});
+    return new Response(new ReadableStream({start(controller){signal?.addEventListener('abort',()=>controller.error(new DOMException('Aborted','AbortError')),{once:true});}}),{status:200});
+  };
+  try{
+    const p=new OpenAICompatibleProvider({id:'test',label:'Test',apiKey:'x',baseUrl:'https://example.test/v1'});
+    assert.equal((await p.models())[0].id,'model-a');
+    const ac=new AbortController(),pending=p.stream({model:'m',messages:[],signal:ac.signal});ac.abort();
+    await assert.rejects(pending,e=>e.name==='AbortError');
+  }finally{globalThis.fetch=oldFetch;}
+});
+
+test('legacy CodeCraftClient remains a compatibility export',async()=>{
+  const {CodeCraftClient}=await import('../src/codecraft.mjs');
+  const {CodeCraftProvider}=await import('../src/providers/codecraft.mjs');
+  assert.equal(CodeCraftClient,CodeCraftProvider);
+});
