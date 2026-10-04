@@ -485,3 +485,22 @@ test('TUI provider metadata can change independently from model',()=>{
   assert.equal(tui.provider,'openrouter');
   assert.equal(tui.model,'or-model');
 });
+
+
+test('sessions persist provider identity and legacy sessions fall back to CodeCraft',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-provider-session-')),store=await new SessionStore(dir).init();
+  try{
+    await store.save({provider:'openrouter',messages:[{role:'user',content:'x'}],transcript:[{role:'user',text:'x'}],model:'vendor/model',mode:'build',effort:'high'});
+    const current=await store.load('latest');assert.equal(current.provider,'openrouter');
+    const raw=JSON.parse(await fs.readFile(store.file(current.id),'utf8'));delete raw.provider;await fs.writeFile(store.file(current.id),JSON.stringify(raw,null,2));
+    const legacy=await store.load(current.id);assert.equal(legacy.provider,'codecraft');
+  }finally{await fs.rm(store.dir,{recursive:true,force:true});await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('observed-only provider usage does not render as Unlimited plan',()=>{
+  const usage={snapshot:()=>({plan:Infinity,total:1234,session:1234,daily:{},byModel:{}}),planTokens:Infinity};
+  const tui=new TerminalTui({cwd:process.cwd(),provider:'openrouter',model:'m',mode:'build',usage,planSource:'observed',showSplash:false});tui.schedule=()=>{};
+  const line=String(tui.usageLine(120,1)).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');
+  assert.doesNotMatch(line,/Unlimited/);
+  assert.match(line,/Observed/);
+});
