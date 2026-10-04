@@ -504,3 +504,10 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
   assert.doesNotMatch(line,/Unlimited/);
   assert.match(line,/Observed/);
 });
+
+
+test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
+  const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:new URL('..',import.meta.url).pathname});
+  assert.match(stdout,/Craft Code 0\.10\.0/);
+  assert.match(stdout,/Provider:/);
+});
