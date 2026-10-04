@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Craft Code terminal interface</title>
+  <desc id="desc">Mock terminal conversation with tool activity, composer and interactive usage pills</desc>
+  <rect width="1200" height="700" rx="24" fill="#0f1115"/>
+  <rect x="1" y="1" width="1198" height="698" rx="23" fill="none" stroke="#30343d"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="42" y="56" font-size="21" fill="#ff9b4a">✦</text>
+    <text x="70" y="56" font-size="21" font-weight="700" fill="#f1f3f5">Craft Code</text>
+    <text x="205" y="56" font-size="18" fill="#777e89">· desk2quant</text>
+    <text x="1075" y="56" font-size="16" fill="#777e89">CodeCraft</text>
+    <line x1="38" y1="78" x2="1162" y2="78" stroke="#262a31"/>
+    <text x="50" y="132" font-size="20" fill="#ff9b4a">❯</text>
+    <text x="78" y="132" font-size="20" fill="#f1f3f5">Fix the checkout access bug and verify the relevant tests.</text>
+    <text x="78" y="180" font-size="18" fill="#ff9b4a">◐ Searching…</text>
+    <text x="92" y="220" font-size="17" fill="#8bd5ca">│ ✓</text><text x="140" y="220" font-size="17" fill="#abb2bf">search_files · checkout</text><text x="1010" y="220" font-size="16" fill="#626975">0.2s</text>
+    <text x="92" y="256" font-size="17" fill="#8bd5ca">│ ✓</text><text x="140" y="256" font-size="17" fill="#abb2bf">read_file · src/lib/access.ts</text><text x="1010" y="256" font-size="16" fill="#626975">0.1s</text>
+    <text x="92" y="292" font-size="17" fill="#8bd5ca">│ ✓</text><text x="140" y="292" font-size="17" fill="#abb2bf">replace_in_file · src/lib/access.ts</text><text x="1010" y="292" font-size="16" fill="#626975">0.1s</text>
+    <text x="92" y="328" font-size="17" fill="#8bd5ca">│ ✓</text><text x="140" y="328" font-size="17" fill="#abb2bf">pnpm test</text><text x="1010" y="328" font-size="16" fill="#626975">3.8s</text>
+    <text x="50" y="390" font-size="20" fill="#ff9b4a">●</text>
+    <text x="78" y="390" font-size="18" fill="#e6e9ee">Fixed the entitlement mismatch and verified the affected tests.</text>
+    <rect x="42" y="450" width="1116" height="112" rx="14" fill="#15181e" stroke="#3a3f49"/>
+    <text x="66" y="495" font-size="18" fill="#7e8590">Ask anything… (@ files · / commands)</text>
+    <text x="66" y="536" font-size="22" fill="#ff9b4a">▌</text>
+    <g font-size="15">
+      <rect x="48" y="590" width="238" height="38" rx="19" fill="#18251f" stroke="#2e5741"/>
+      <text x="67" y="615" fill="#9be7b0">◔ 23% · 23.2M left</text>
+      <rect x="300" y="590" width="154" height="38" rx="19" fill="#17202a" stroke="#2d4f70"/>
+      <text x="319" y="615" fill="#8ec8ff">Today 1.8M</text>
+      <rect x="468" y="590" width="146" height="38" rx="19" fill="#211b2d" stroke="#543e73"/>
+      <text x="487" y="615" fill="#c6a0f6">Context 18k</text>
+      <rect x="48" y="640" width="64" height="36" rx="18" fill="#2a1d14" stroke="#7a4525"/><text x="70" y="664" fill="#ff9b4a">＋</text>
+      <rect x="124" y="640" width="64" height="36" rx="18" fill="#1b1f25" stroke="#353b44"/><text x="149" y="664" fill="#d7dae0">@</text>
+      <rect x="200" y="640" width="96" height="36" rx="18" fill="#17261e" stroke="#2d5c3c"/><text x="221" y="664" fill="#9be7b0">BUILD</text>
+      <rect x="308" y="640" width="80" height="36" rx="18" fill="#282111" stroke="#685724"/><text x="330" y="664" fill="#f5d76e">Ask</text>
+      <rect x="866" y="640" width="188" height="36" rx="18" fill="#2a1d14" stroke="#7a4525"/><text x="886" y="664" fill="#ff9b4a">claude-opus</text>
+      <rect x="1066" y="640" width="92" height="36" rx="18" fill="#211b2d" stroke="#543e73"/><text x="1087" y="664" fill="#c6a0f6">High</text>
+    </g>
+  </g>
+</svg>
