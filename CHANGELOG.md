@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.1
+
+- Prevented stdio connector stderr (including Windows `docker` shell errors) from corrupting the full-screen TUI.
+- Added prerequisite checks and actionable MCP connector failures instead of raw `Connection closed` messages.
+- Suppressed duplicate transient notices and improved connector picker setup hints.
+- Made the test command portable across Windows, macOS, and Linux.
+
 All notable changes to Craft Code are documented here.
 
 ## 0.9.0
