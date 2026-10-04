@@ -6,7 +6,7 @@ import process from 'node:process';
 export const AUTH_DIR = path.join(os.homedir(), '.craftcli');
 export const AUTH_FILE = path.join(AUTH_DIR, 'auth.json');
 
-async function readAuth() {
+export async function readAuth() {
   try {
     const raw = JSON.parse(await fs.readFile(AUTH_FILE, 'utf8'));
     return raw && typeof raw === 'object' ? raw : {};
@@ -15,35 +15,38 @@ async function readAuth() {
   }
 }
 
-export async function resolveApiKey() {
-  const env = String(process.env.CODECRAFT_API_KEY || '').trim().replace(/^['"]|['"]$/g, '');
-  if (env) return { key: env, source: 'environment' };
-  const auth = await readAuth();
-  const key = String(auth.codecraftApiKey || '').trim();
-  return key ? { key, source: 'stored' } : { key: '', source: 'none' };
+const cleanKey=v=>String(v||'').trim().replace(/^['"]|['"]$/g,'');
+const envFor=(providerId,providerConfig={})=>providerConfig.apiKeyEnv||(providerId==='codecraft'?'CODECRAFT_API_KEY':providerId==='openrouter'?'OPENROUTER_API_KEY':'');
+
+export function selectProviderApiKey(providerId,providerConfig={},auth={},env=process.env){
+  const envName=envFor(providerId,providerConfig),fromEnv=envName?cleanKey(env?.[envName]):'';
+  if(fromEnv)return{key:fromEnv,source:'environment'};
+  const scoped=cleanKey(auth?.providers?.[providerId]?.apiKey);
+  if(scoped)return{key:scoped,source:'stored'};
+  if(providerId==='codecraft'){const legacy=cleanKey(auth?.codecraftApiKey);if(legacy)return{key:legacy,source:'stored-legacy'};}
+  return{key:'',source:'none'};
 }
 
-export async function saveApiKey(key) {
-  const clean = String(key || '').trim().replace(/^['"]|['"]$/g, '');
-  if (!clean) throw new Error('API key is empty.');
-  await fs.mkdir(AUTH_DIR, { recursive: true, mode: 0o700 });
-  const next = { ...(await readAuth()), codecraftApiKey: clean, updatedAt: new Date().toISOString() };
-  await fs.writeFile(AUTH_FILE, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
-  try { await fs.chmod(AUTH_FILE, 0o600); } catch {}
-  return AUTH_FILE;
+export async function resolveProviderApiKey(providerId='codecraft',providerConfig={}){
+  return selectProviderApiKey(providerId,providerConfig,await readAuth(),process.env);
+}
+export async function saveProviderApiKey(providerId,key){
+  if(!/^[A-Za-z0-9._-]+$/.test(String(providerId||'')))throw new Error('Invalid provider id.');
+  const clean=cleanKey(key);if(!clean)throw new Error('API key is empty.');
+  await fs.mkdir(AUTH_DIR,{recursive:true,mode:0o700});const current=await readAuth(),providers={...(current.providers||{}),[providerId]:{...(current.providers?.[providerId]||{}),apiKey:clean}};
+  const next={...current,providers,updatedAt:new Date().toISOString()};if(providerId==='codecraft')delete next.codecraftApiKey;
+  await fs.writeFile(AUTH_FILE,JSON.stringify(next,null,2)+'\n',{mode:0o600});try{await fs.chmod(AUTH_FILE,0o600);}catch{}return AUTH_FILE;
+}
+export async function clearProviderApiKey(providerId){
+  const auth=await readAuth(),providers={...(auth.providers||{})};delete providers[providerId];auth.providers=providers;if(providerId==='codecraft')delete auth.codecraftApiKey;
+  if(!Object.keys(providers).length)delete auth.providers;
+  if(!Object.keys(auth).filter(k=>k!=='updatedAt').length){try{await fs.unlink(AUTH_FILE);}catch{}return;}
+  auth.updatedAt=new Date().toISOString();await fs.writeFile(AUTH_FILE,JSON.stringify(auth,null,2)+'\n',{mode:0o600});try{await fs.chmod(AUTH_FILE,0o600);}catch{}
 }
 
-export async function clearApiKey() {
-  const auth = await readAuth();
-  delete auth.codecraftApiKey;
-  if (!Object.keys(auth).filter(k => k !== 'updatedAt').length) {
-    try { await fs.unlink(AUTH_FILE); } catch {}
-    return;
-  }
-  auth.updatedAt = new Date().toISOString();
-  await fs.writeFile(AUTH_FILE, JSON.stringify(auth, null, 2) + '\n', { mode: 0o600 });
-  try { await fs.chmod(AUTH_FILE, 0o600); } catch {}
-}
+export async function resolveApiKey(){return resolveProviderApiKey('codecraft',{});}
+export async function saveApiKey(key){return saveProviderApiKey('codecraft',key);}
+export async function clearApiKey(){return clearProviderApiKey('codecraft');}
 
 export function maskKey(key) {
   const x = String(key || '');

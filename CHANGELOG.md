@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0
+
+- Refactored Craft Code into a provider-agnostic coding-agent runtime.
+- Added OpenRouter support through its OpenAI-compatible API, including tool-capability metadata from the model catalog.
+- Added generic configurable OpenAI-compatible providers for local/self-hosted or third-party gateways.
+- Added provider-scoped API-key storage and environment-variable precedence; legacy CodeCraft credentials remain compatible.
+- Added `/provider` and `/providers`, provider-aware `/model` and `/status`, and `craftcode auth login|status|logout [provider]`.
+- Provider switching updates both the main agent and subagent runtime without restarting Craft Code.
+- Sessions now persist provider identity; legacy sessions default to CodeCraft.
+- Providers without reliable plan metadata show observed local usage instead of a fabricated Unlimited plan.
+- CodeCraft remains the default for legacy installations and preserves its existing TPM pacing and plan-hint behavior.
+
 ## 0.9.9
 
 - Fixed long turns silently stopping mid-edit or mid-reasoning when the adaptive TPM step cap was reached.

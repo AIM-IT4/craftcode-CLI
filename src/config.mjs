@@ -6,9 +6,14 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 13,
+  configVersion: 14,
+  provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
+  providers: {
+    codecraft: { type: 'codecraft', baseUrl: 'https://codecraftapi.com/v1', apiKeyEnv: 'CODECRAFT_API_KEY' },
+    openrouter: { type: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY', appUrl: 'https://github.com/AIM-IT4/craftcode-CLI', appName: 'Craft Code' }
+  },
   // "auto" infers the CodeCraft tier from X-RateLimit-Limit. Set a number to override.
   planTokens: 'auto',
   resetDay: 4,
@@ -88,6 +93,7 @@ function migrateLegacyConfig(x={}) {
   const y={...x};
   // v0.5 wrote 100M as a generated default. It was not account-derived.
   if (!y.configVersion && y.planTokens === 100_000_000) delete y.planTokens;
+  if(y.baseUrl&&!y.providers?.codecraft?.baseUrl)y.providers={...(y.providers||{}),codecraft:{...(y.providers?.codecraft||{}),type:'codecraft',baseUrl:y.baseUrl}};
   return y;
 }
 export async function loadConfig(cwd) {
@@ -143,4 +149,21 @@ export function resolvePlanTokens(config, planHint) {
   if(planHint?.tokens)return {tokens:planHint.tokens,source:'rate-limit'};
   // Safer than overstating remaining allowance. Starter is CodeCraft's first paid tier.
   return {tokens:30_000_000,source:'fallback'};
+}
+
+
+export function normalizeProviderConfig(config={}){
+  const provider=String(config.provider||process.env.CRAFTCODE_PROVIDER||'codecraft').trim()||'codecraft';
+  const providers={
+    codecraft:{type:'codecraft',baseUrl:'https://codecraftapi.com/v1',apiKeyEnv:'CODECRAFT_API_KEY'},
+    openrouter:{type:'openrouter',baseUrl:'https://openrouter.ai/api/v1',apiKeyEnv:'OPENROUTER_API_KEY',appUrl:'https://github.com/AIM-IT4/craftcode-CLI',appName:'Craft Code'},
+    ...(config.providers||{})
+  };
+  if(config.baseUrl&&!config.providers?.codecraft?.baseUrl)providers.codecraft={...providers.codecraft,baseUrl:config.baseUrl};
+  return{...config,provider,providers,model:config.model||''};
+}
+
+
+export function providerLoginPatch(providerArg,providerId){
+  return String(providerArg||'').trim()?{provider:String(providerId||'').trim()}:null;
 }

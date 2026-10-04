@@ -1,7 +1,7 @@
 {
   "name": "craftcode-codecraft",
-  "version": "0.9.9",
-  "description": "CodeCraft-native terminal coding and research agent with a full-screen TUI, resumable sessions, subagents, skills, plugins, MCP connectors, permissions and token guards.",
+  "version": "0.10.0",
+  "description": "Provider-agnostic terminal coding and research agent with CodeCraft, OpenRouter and OpenAI-compatible providers, a full-screen TUI, subagents, skills, plugins and MCP.",
   "type": "module",
   "bin": {
     "craftcode": "src/index.mjs",
@@ -20,6 +20,9 @@
   },
   "license": "MIT",
   "keywords": [
+    "provider-agnostic",
+    "openrouter",
+    "openai-compatible",
     "codecraft",
     "coding-agent",
     "cli",
