@@ -388,3 +388,78 @@ test('agent continues when provider stops a response at output length',async()=>
   assert.equal(calls,2);
   assert.equal(r.text,'partial completed');
 });
+
+
+test('generic OpenAI-compatible provider streams content and tool calls',async()=>{
+  const {OpenAICompatibleClient}=await import('../src/providers/openai-compatible.mjs');
+  const oldFetch=globalThis.fetch,enc=new TextEncoder();let requested;
+  globalThis.fetch=async(url,opts)=>{requested={url,opts};return new Response(new ReadableStream({start(c){
+    c.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'Hi '},finish_reason:null}]})+'\n\n'));
+    c.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:'c1',function:{name:'read_file',arguments:'{"path":"README.md"}'}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:3,completion_tokens:2,total_tokens:5}})+'\n\n'));
+    c.enqueue(enc.encode('data: [DONE]\n\n'));c.close();
+  }}),{status:200,headers:{'content-type':'text/event-stream'}});};
+  try{
+    const c=new OpenAICompatibleClient({id:'custom',label:'Custom',apiKey:'secret',baseUrl:'https://example.test/v1'});
+    const r=await c.stream({model:'coder',messages:[{role:'user',content:'x'}],tools:[],onText:()=>{}});
+    assert.equal(requested.url,'https://example.test/v1/chat/completions');
+    assert.equal(requested.opts.headers.Authorization,'Bearer secret');
+    assert.equal(r.message.content,'Hi ');
+    assert.equal(r.message.tool_calls[0].function.name,'read_file');
+    assert.equal(r.usage.total_tokens,5);
+  }finally{globalThis.fetch=oldFetch;}
+});
+
+test('generic provider without API key never sends Authorization',async()=>{
+  const {OpenAICompatibleClient}=await import('../src/providers/openai-compatible.mjs');
+  const c=new OpenAICompatibleClient({id:'local',label:'Local',baseUrl:'http://localhost:11434/v1'});
+  assert.equal('Authorization' in c.headers(),false);
+});
+
+test('OpenRouter provider uses isolated headers and model tool capability metadata',async()=>{
+  const {OpenRouterClient}=await import('../src/providers/openrouter.mjs');
+  const oldFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(JSON.stringify({data:[
+    {id:'vendor/tool-model',context_length:128000,supported_parameters:['tools','reasoning']},
+    {id:'vendor/text-model',context_length:32000,supported_parameters:['temperature']}
+  ]}),{status:200,headers:{'content-type':'application/json'}});
+  try{
+    const c=new OpenRouterClient({apiKey:'or-key',appUrl:'https://github.com/AIM-IT4/craftcode-CLI',appName:'Craft Code'});
+    const models=await c.models();assert.equal(models.length,2);
+    assert.equal(c.headers()['HTTP-Referer'],'https://github.com/AIM-IT4/craftcode-CLI');
+    assert.equal(c.headers()['X-Title'],'Craft Code');
+    assert.equal(c.capabilities('vendor/tool-model').tools,true);
+    assert.equal(c.capabilities('vendor/text-model').tools,false);
+  }finally{globalThis.fetch=oldFetch;}
+});
+
+test('provider config preserves legacy CodeCraft settings and adds OpenRouter',async()=>{
+  const {normalizeProviderConfig}=await import('../src/config.mjs');
+  const x=normalizeProviderConfig({baseUrl:'https://legacy.example/v1',model:'legacy-model'});
+  assert.equal(x.provider,'codecraft');
+  assert.equal(x.providers.codecraft.baseUrl,'https://legacy.example/v1');
+  assert.equal(x.model,'legacy-model');
+  assert.equal(x.providers.openrouter.baseUrl,'https://openrouter.ai/api/v1');
+});
+
+test('provider credentials use provider-specific env vars and never cross providers',async()=>{
+  const {selectProviderApiKey}=await import('../src/auth.mjs');
+  const auth={codecraftApiKey:'legacy-cc',providers:{codecraft:{apiKey:'stored-cc'},openrouter:{apiKey:'stored-or'}}};
+  const env={CODECRAFT_API_KEY:'env-cc',OPENROUTER_API_KEY:'env-or'};
+  assert.deepEqual(selectProviderApiKey('codecraft',{},auth,env),{key:'env-cc',source:'environment'});
+  assert.deepEqual(selectProviderApiKey('openrouter',{},auth,env),{key:'env-or',source:'environment'});
+  assert.deepEqual(selectProviderApiKey('custom',{apiKeyEnv:'CUSTOM_KEY'},auth,{CUSTOM_KEY:'custom'}),{key:'custom',source:'environment'});
+  assert.deepEqual(selectProviderApiKey('other',{},auth,{}),{key:'',source:'none'});
+});
+
+test('provider registry creates CodeCraft, OpenRouter and custom compatible clients',async()=>{
+  const {ProviderRegistry}=await import('../src/providers/index.mjs');
+  const registry=new ProviderRegistry({provider:'openrouter',providers:{
+    codecraft:{type:'codecraft',baseUrl:'https://codecraftapi.com/v1'},
+    openrouter:{type:'openrouter',baseUrl:'https://openrouter.ai/api/v1'},
+    local:{type:'openai-compatible',baseUrl:'http://localhost:11434/v1',auth:false}
+  }});
+  assert.equal(registry.activeId(),'openrouter');
+  assert.equal(registry.create('codecraft',{apiKey:'x'}).id,'codecraft');
+  assert.equal(registry.create('openrouter',{apiKey:'x'}).id,'openrouter');
+  const local=registry.create('local');assert.equal(local.id,'local');assert.equal('Authorization' in local.headers(),false);
+});
