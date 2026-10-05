@@ -45,6 +45,9 @@ const defaults = {
     sandbox: 'host',
     dockerImage: 'node:20-bookworm-slim'
   },
+  processes: {
+    maxBufferChars: 60000
+  },
   ignore: ['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.turbo', '.cache'],
   mcpServers: {},
   activePlugins: [],
