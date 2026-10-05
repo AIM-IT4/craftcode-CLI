@@ -44,7 +44,7 @@ async function resolveBearer(c){
 
 export class McpManager {
   constructor(serverConfigs = {}, catalog = {}) { this.baseConfigs={...catalog,...serverConfigs};this.configs = {...this.baseConfigs}; this.clients = new Map(); this.catalog = catalog; this.pluginNames=new Set(); }
-  list() { return Object.entries(this.configs).map(([name,c]) => ({name, type:c.type||'http', connected:this.clients.has(name), url:c.url, oauth:!!c.oauth, browserOAuth:!!c.browserOAuth, requirement:c.requirement||'', authHint:c.authHint||''})); }
+  list() { return Object.entries(this.configs).map(([name,c]) => ({name, type:c.type||'http', connected:this.clients.has(name), url:c.url, oauth:!!c.oauth, browserOAuth:!!c.browserOAuth, authMode:c.authMode||(c.oauth||c.browserOAuth?'browser':c.tokenRequired?'token':(c.type==='stdio'||c.type==='cli')?'local':'direct'), requirement:c.requirement||'', authHint:c.authHint||''})); }
   add(name,config){this.configs[name]=config;return this.configs[name];}
   setPluginConfigs(configs={}){for(const n of this.pluginNames){delete this.configs[n];}this.pluginNames.clear();for(const [n,c] of Object.entries(configs||{})){this.configs[n]=c;this.pluginNames.add(n);}return this;}
   remove(name){delete this.configs[name];const x=this.clients.get(name);if(x){try{x.client.close();}catch{}this.clients.delete(name);} }
