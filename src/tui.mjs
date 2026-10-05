@@ -307,7 +307,7 @@ export class TerminalTui{
       if(m.role==='notice'){out.push(`  ${paint('yellow','!')} ${paint('slate',crop(m.text,w-5))}`);continue;}
       if(m.role==='thinking'){
         const mark=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).thinking;
-        if(m.status==='running'){out.push(`  ${paint('orange',mark)} ${paint('italic',paint('slate',`${m.detail||'Thinking'}…`))}`);continue;}
+        if(m.status==='running'){out.push(`  ${paint('orange',mark)} ${C.italic}${C.slate}${m.detail||'Thinking'}…${C.reset}`);continue;}
         const dur=m.durationMs?`${Math.max(.1,m.durationMs/1000).toFixed(1)}s`:'';
         out.push(`  ${paint('slate',mark)} ${paint('slate',m.detail||'Thought')}${dur?` ${paint('dim',`for ${dur}`)}`:''}`);continue;
       }
