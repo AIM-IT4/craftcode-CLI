@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import {SemanticIndex} from '../src/semantic.mjs';
 import {ToolRegistry} from '../src/tools.mjs';
+import {CommandPolicy} from '../src/policy.mjs';
 
 const deps=()=>({
   skills:{list:()=>[],load:async()=>({})},
@@ -75,4 +76,70 @@ test('ToolRegistry exposes semantic_code as a read-only parallel-safe tool',()=>
   const def=registry.definitions('plan').find(x=>x.function?.name==='semantic_code');
   assert.ok(def);
   assert.equal(registry.isParallelSafe('semantic_code'),true);
+});
+
+
+test('command policy allows local verification but asks for external-impact commands',()=>{
+  const policy=new CommandPolicy({cwd:process.cwd()});
+  assert.equal(policy.evaluate('git status').decision,'allow');
+  assert.equal(policy.evaluate('npm test').decision,'allow');
+  assert.equal(policy.evaluate('node --test test/basic.test.mjs').decision,'allow');
+  for(const command of ['git push origin main','npm publish','curl https://example.com','vercel deploy']){
+    const r=policy.evaluate(command);
+    assert.equal(r.decision,'ask',command);
+    assert.ok(r.reason);
+  }
+  assert.equal(policy.evaluate('git status && npm publish').decision,'ask');
+});
+
+test('command policy denies catastrophic host commands even when shell permission is otherwise automatic',()=>{
+  const policy=new CommandPolicy({cwd:process.cwd()});
+  const commands=process.platform==='win32'
+    ? ['Remove-Item C:\\\\ -Recurse -Force','git clean -fdx']
+    : ['rm -rf /','git clean -fdx','git reset --hard','shutdown -h now'];
+  for(const command of commands){
+    const r=policy.evaluate(command);
+    assert.equal(r.decision,'deny',command);
+    assert.equal(r.kind,'dangerous');
+  }
+});
+
+test('Docker sandbox wrapper disables network and mounts only the workspace',()=>{
+  const cwd=path.resolve(process.cwd());
+  const policy=new CommandPolicy({cwd,sandbox:'docker',dockerImage:'node:20-bookworm-slim'});
+  const r=policy.wrap('npm test');
+  assert.equal(r.exe,'docker');
+  assert.ok(r.args.includes('--network'));
+  assert.ok(r.args.includes('none'));
+  assert.ok(r.args.includes('--rm'));
+  assert.ok(r.args.includes('-w'));
+  assert.ok(r.args.includes('/workspace'));
+  assert.ok(r.args.some(x=>String(x).includes(':\/workspace')||String(x).endsWith(':/workspace')));
+  assert.equal(r.args.at(-1),'npm test');
+});
+
+test('ToolRegistry refuses policy-denied shell commands before execution',async()=>{
+  const {skills,plugins,mcp}=deps();
+  let approvals=0;
+  const registry=new ToolRegistry({
+    cwd:process.cwd(),
+    config:{permissions:{shell:'allow'},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},
+    skills,plugins,mcp,askFn:async()=>{approvals++;return true;}
+  });
+  const r=await registry.execute('run_command',{command:'git clean -fdx'},'build');
+  assert.match(String(r),/denied by policy/i);
+  assert.equal(approvals,0);
+});
+
+test('ToolRegistry asks for external-impact commands even when shell permission is allow',async()=>{
+  const {skills,plugins,mcp}=deps();
+  let approvals=0;
+  const registry=new ToolRegistry({
+    cwd:process.cwd(),
+    config:{permissions:{shell:'allow'},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},
+    skills,plugins,mcp,askFn:async q=>{approvals++;assert.match(q,/external|network|publish|deploy|push/i);return false;}
+  });
+  const r=await registry.execute('run_command',{command:'npm publish'},'build');
+  assert.match(String(r),/denied by user/i);
+  assert.equal(approvals,1);
 });
