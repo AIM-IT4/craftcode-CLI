@@ -24,6 +24,32 @@ const EXTERNAL=[
   {re:/\bgh\s+(?:release\s+create|pr\s+merge|repo\s+delete)\b/i,kind:'publish',reason:'GitHub mutation requires explicit approval'}
 ];
 
+
+const DESTRUCTIVE_ASK=[
+  {re:/\brm\s+-[^\s]*(?:r[^\s]*f|f[^\s]*r)[^\s]*/i,kind:'destructive',reason:'recursive forced deletion requires explicit approval'},
+  {re:/\bRemove-Item\b(?=[^\n;&|]*-Recurse)(?=[^\n;&|]*-Force)/i,kind:'destructive',reason:'recursive forced deletion requires explicit approval'},
+  {re:/\bfind\b[^\n;&|]*\s-delete\b/i,kind:'destructive',reason:'bulk deletion requires explicit approval'},
+  {re:/\b(?:shred|truncate)\b/i,kind:'destructive',reason:'destructive file mutation requires explicit approval'}
+];
+
+const OPAQUE_EXECUTION=[
+  {re:/\bnode(?:\.exe)?\s+(?:-e|--eval|--test\b|[^\s]+\.(?:js|mjs|cjs)\b)/i,kind:'opaque',reason:'Node can execute arbitrary project or inline code'},
+  {re:/\b(?:python|python3|py)(?:\.exe)?\s+(?:-c|-m\s+|[^\s]+\.py\b)/i,kind:'opaque',reason:'Python can execute arbitrary project or inline code'},
+  {re:/\b(?:bash|sh|zsh)\s+-[^\s]*c\b/i,kind:'opaque',reason:'nested shell execution requires explicit approval'},
+  {re:/\b(?:powershell|pwsh)(?:\.exe)?\b[^\n;&|]*(?:-Command|-EncodedCommand)\b/i,kind:'opaque',reason:'PowerShell command execution requires explicit approval'},
+  {re:/\bcmd(?:\.exe)?\s+\/(?:c|k)\b/i,kind:'opaque',reason:'nested cmd execution requires explicit approval'}
+];
+
+const PROJECT_EXECUTION=[
+  {re:/\bnpm\s+(?:test|start|run)\b/i,kind:'project-code',reason:'npm scripts execute repository-controlled code'},
+  {re:/\bpnpm\s+(?:test|start|run|exec)\b/i,kind:'project-code',reason:'pnpm scripts execute repository-controlled code'},
+  {re:/\byarn\s+(?:test|start|run)\b/i,kind:'project-code',reason:'yarn scripts execute repository-controlled code'},
+  {re:/\b(?:npx|bunx)\b/i,kind:'project-code',reason:'package runners can execute repository or downloaded code'},
+  {re:/\bbun\s+(?:run|test)\b/i,kind:'project-code',reason:'Bun can execute repository-controlled code'},
+  {re:/\bdeno\s+(?:run|test)\b/i,kind:'project-code',reason:'Deno can execute repository-controlled code'},
+  {re:/\b(?:cargo\s+(?:test|run|build)|go\s+(?:test|run)|pytest\b|jest\b|vitest\b|mocha\b)/i,kind:'project-code',reason:'verification commands execute repository-controlled code'}
+];
+
 export class CommandPolicy{
   constructor({cwd=process.cwd(),sandbox='host',dockerImage='node:20-bookworm-slim'}={}){
     this.cwd=path.resolve(cwd);this.sandbox=sandbox||'host';this.dockerImage=dockerImage||'node:20-bookworm-slim';
@@ -33,13 +59,16 @@ export class CommandPolicy{
     if(!c)return{decision:'deny',kind:'invalid',reason:'empty command'};
     for(const x of DANGEROUS)if(x.re.test(c))return{decision:'deny',kind:'dangerous',reason:x.reason};
     for(const x of EXTERNAL)if(x.re.test(c))return{decision:'ask',kind:x.kind,reason:x.reason};
+    for(const x of DESTRUCTIVE_ASK)if(x.re.test(c))return{decision:'ask',kind:x.kind,reason:x.reason};
+    for(const x of OPAQUE_EXECUTION)if(x.re.test(c))return{decision:'ask',kind:x.kind,reason:x.reason};
+    if(this.sandbox!=='docker')for(const x of PROJECT_EXECUTION)if(x.re.test(c))return{decision:'ask',kind:x.kind,reason:x.reason};
     return{decision:'allow',kind:'local',reason:'local command within the configured shell permission'};
   }
   wrap(command){
     const c=String(command||'');
     if(this.sandbox==='docker'){
       const mount=`${this.cwd}:/workspace`;
-      return{exe:'docker',args:['run','--rm','--network','none','-v',mount,'-w','/workspace',this.dockerImage,'sh','-lc',c],cwd:this.cwd,sandbox:'docker'};
+      return{exe:'docker',args:['run','--rm','--network','none','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','256','--memory','2g','--cpus','2','-v',mount,'-w','/workspace',this.dockerImage,'sh','-lc',c],cwd:this.cwd,sandbox:'docker'};
     }
     if(process.platform==='win32')return{exe:'cmd',args:['/d','/s','/c',c],cwd:this.cwd,sandbox:'host'};
     return{exe:'bash',args:['-lc',c],cwd:this.cwd,sandbox:'host'};
