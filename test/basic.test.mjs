@@ -64,10 +64,12 @@ test('slash commands are normalized and never added to chat transcript',async()=
   assert.equal(got,'/mode build');assert.equal(tui.transcript.length,0);
 });
 
-test('thinking is represented inline in transcript',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+test('thinking is represented inline with Claude-style activity copy',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,uiStyle:'claude'});tui.schedule=()=>{};
   tui.add('user','hello');tui.setBusy(true);assert.equal(tui.transcript.at(-1).role,'thinking');assert.equal(tui.transcript.at(-1).status,'running');
+  let rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/✻ Thinking…/);
   tui.setBusy(false);assert.equal(tui.transcript.at(-1).status,'done');
+  rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/✻ Thought/);
 });
 
 test('footer exposes interactive usage mode model and effort regions',()=>{
@@ -135,6 +137,19 @@ test('parallel subagents run with bounded per-agent budgets',async()=>{
 
 test('connector catalog exposes OAuth and browser-login connectors without loading tools',()=>{
   const m=new McpManager({}, {supabase:{type:'http',url:'https://mcp.supabase.com/mcp',oauth:true},github:{type:'stdio',command:'docker',browserOAuth:true}});const xs=m.list();assert.equal(xs.length,2);assert.equal(xs.find(x=>x.name==='supabase').oauth,true);assert.equal(xs.find(x=>x.name==='github').browserOAuth,true);
+});
+
+test('connector picker describes auth UX instead of CLI prerequisites',async()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  const pending=tui.pickConnector([{name:'vercel',type:'cli',authMode:'browser',requirement:'browser approval opens automatically',connected:false},{name:'github',type:'http',authMode:'token',connected:false}]);
+  assert.equal(tui.modal.items[0].meta,'Browser approval · browser approval opens automatically');
+  assert.equal(tui.modal.items[1].meta,'Token / existing login');
+  tui.closeModal('vercel');await pending;
+});
+
+test('visual styles switch terminal glyph profile without pretending to change font family',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,uiStyle:'claude'});tui.schedule=()=>{};
+  assert.equal(tui.uiStyle,'claude');tui.setMeta({uiStyle:'minimal'});assert.equal(tui.uiStyle,'minimal');
 });
 
 test('TUI merges installed plugin slash commands into command palette',()=>{
@@ -277,11 +292,13 @@ test('mouse capture is explicit and reversible',()=>{
 });
 
 
-test('Vercel connector uses CLI device auth instead of unapproved MCP OAuth', async()=>{
+test('Vercel connector uses browser device approval without a global CLI requirement', async()=>{
   const {loadConfig}=await import('../src/config.mjs');const cfg=await loadConfig(process.cwd());
   assert.equal(cfg.connectorCatalog.vercel.type,'cli');
-  assert.equal(cfg.connectorCatalog.vercel.oauth,undefined);
-  assert.match(cfg.connectorCatalog.vercel.authHint,/approved clients/i);
+  assert.equal(cfg.connectorCatalog.vercel.command,'npx');
+  assert.equal(cfg.connectorCatalog.vercel.browserOAuth,true);
+  assert.equal(cfg.connectorCatalog.vercel.authMode,'browser');
+  assert.match(cfg.connectorCatalog.vercel.authHint,/no global Vercel CLI install/i);
 });
 
 test('vercel_api is exposed as a first-class agent tool',()=>{
