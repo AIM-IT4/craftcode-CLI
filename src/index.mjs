@@ -19,11 +19,13 @@ import {AgentManager} from './agents.mjs';
 import {resolveProviderApiKey,saveProviderApiKey,clearProviderApiKey,maskKey,promptSecret,AUTH_FILE} from './auth.mjs';
 import {spawn} from 'node:child_process';
 import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
+import {runRuntimeEvals} from './evals.mjs';
 
 function parseArgs(){
   const a=process.argv.slice(2);let yes=false,cwd=process.cwd(),resume=false,showSplash=true,doctor=false,version=false;
   let action='',actionArg='',actionProvider='',resumeRef='latest';
   if(a[0]==='auth'){action='auth';actionArg=(a[1]||'status').toLowerCase();actionProvider=(a[2]||'').toLowerCase();a.splice(0,3);}
+  else if((a[0]||'').toLowerCase()==='eval'){action='eval';actionArg=(a[1]||'runtime').toLowerCase();a.splice(0,2);}
   else if(['update','upgrade'].includes(a[0])){action='update';a.splice(0,1);}
   else if(['resume','continue'].includes((a[0]||'').toLowerCase())){resume=true;a.splice(0,1);}
   for(let i=0;i<a.length;i++){
@@ -99,6 +101,14 @@ async function vercelInteractiveLogin(cwd,tui){
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
   if(version){console.log('Craft Code 0.10.0');return;}
+  if(action==='eval'){
+    if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
+    const r=await runRuntimeEvals();
+    console.log(`Runtime evals: ${r.passed}/${r.total} passed`);
+    for(const x of r.cases)console.log(`${x.ok?'✓':'✗'} ${x.name}${x.ok?'':': '+x.error}`);
+    if(r.failed)process.exitCode=1;
+    return;
+  }
   if(action==='auth'){await handleAuth(actionArg,actionProvider,cwd);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
