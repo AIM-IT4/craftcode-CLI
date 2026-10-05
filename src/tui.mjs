@@ -58,6 +58,7 @@ const COMMANDS=[
   {cmd:'/resume',desc:'Resume latest or named session'},
   {cmd:'/status',desc:'Workspace, Git, model, extensions and usage'},
   {cmd:'/context',desc:'Inspect current context size and composition'},
+  {cmd:'/doctor',desc:'Check provider/session/context health'},
   {cmd:'/instructions',desc:'Show/reload AGENTS.md and project instructions'},
   {cmd:'/init',desc:'Create a starter AGENTS.md'},
   {cmd:'/settings',desc:'Persistent workspace settings'},
@@ -129,7 +130,7 @@ export class TerminalTui{
     Object.assign(this,o);
     this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;
     this.transcript=[];this.input='';this.cursor=0;this.history=[];this.hist=-1;
-    this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;
+    this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;this.contextWindowTokens=Number(o.contextWindowTokens)||0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
     this.fileSuggestionIndex=0;this.commandSelection=0;this.toolSelection=null;this.spinnerIndex=0;
     this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;this.mouseCapture=!!o.mouseCapture;
@@ -161,7 +162,7 @@ export class TerminalTui{
   }
   enterSelectionMode(){this.setMouseCapture(false);}
   exitSelectionMode(){/* native selection persists while mouse capture is off */}
-  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;this.schedule();}
+  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
     if(!v&&this.busy){const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());t.detail='Thought';}}
@@ -328,7 +329,7 @@ export class TerminalTui{
       return[
         paint('orange','╭─ Usage '+ '─'.repeat(Math.max(1,w-10))+'╮'),
         observed?` ${paint('bold','Observed usage')}   ${fmtTokens(u.total)} tracked locally   ${paint('dim','provider plan not reported')}`:` ${paint('bold',`${usedPct}% used`)}   ${fmtPlan(rem)} left / ${fmtPlan(u.plan)}   ${paint('dim',`reset in ${daysUntilReset(this.resetDay)}`)}`,
-        ` Today ${paint('blue',fmtTokens(today))}   Session ${paint('cyan',fmtTokens(u.session))}   Context ~${paint('violet',fmtTokens(Math.ceil(this.contextChars/4)))}`,
+        ` Today ${paint('blue',fmtTokens(today))}   Session ${paint('cyan',fmtTokens(u.session))}   Context ${paint('violet',this.contextWindowTokens?`${fmtTokens(Math.ceil(this.contextChars/4))}/${fmtTokens(this.contextWindowTokens)} (${Math.round(Math.ceil(this.contextChars/4)/this.contextWindowTokens*100)}%)`:`~${fmtTokens(Math.ceil(this.contextChars/4))}`)}`,
         observed?` Provider ${paint('green',this.provider)}   ${paint('dim','usage counter is local to Craft Code')}`:` Tier ${paint('green',this.startupMeta?.planName||fmtPlan(u.plan))}${this.startupMeta?.rpm?paint('dim',` · ${this.startupMeta.rpm} RPM detected`):paint('dim',` · ${this.planSource}`)}   ${paint('dim','usage counter is local to Craft Code')}`, 
         ` Request ${this.requestUsage?`↑ ${fmtTokens(this.requestUsage.prompt_tokens||0)}   ↓ ${fmtTokens(this.requestUsage.completion_tokens||0)}`:'—'}`,
         ` ${paint('dim','Enter / Esc close · /usage set <tokens> used · /usage plan 30m overrides tier')}`,
@@ -390,12 +391,13 @@ export class TerminalTui{
     return fit(line+' '.repeat(space)+rightText,w);
   }
   usageLine(w,y){
-    const u=this.usage.snapshot(),observed=this.planSource==='observed',rem=Math.max(0,u.plan-u.total),pct=observed?0:u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0,ctx=fmtTokens(Math.ceil(this.contextChars/4));
+    const u=this.usage.snapshot(),observed=this.planSource==='observed',rem=Math.max(0,u.plan-u.total),pct=observed?0:u.plan?Math.round(u.total/u.plan*100):0,today=u.daily?.[dayKey()]||0,ctxTokens=Math.ceil(this.contextChars/4),ctx=fmtTokens(ctxTokens),ctxPct=this.contextWindowTokens?Math.round(ctxTokens/this.contextWindowTokens*100):0;
     const plan=observed?`Observed ${fmtTokens(u.total)}`:u.plan===Infinity?'Unlimited':`${pct}% · ${fmtPlan(rem)} left`;
+    const ctxLabel=this.contextWindowTokens?`Context ${ctx}/${fmtTokens(this.contextWindowTokens)} · ${ctxPct}%`:`Context ${ctx}`;
     const parts=[
       chip(plan,{tone:pct>=90?'red':pct>=70?'yellow':'green',icon:'◔'}),
       chip(`Today ${fmtTokens(today)}`,{tone:'blue',icon:'◷'}),
-      chip(`Context ${ctx}`,{tone:'violet',icon:'◇'})
+      chip(ctxLabel,{tone:ctxPct>=88?'red':ctxPct>=70?'yellow':'violet',icon:'◇'})
     ];
     const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','mouse wheel scroll · /mouse off for native copy'):paint('dim','wheel/↑↓ scroll · Ctrl+P/N history · drag to copy');
     const line='  '+joined,space=Math.max(2,w-width(line)-width(hint)-2);
