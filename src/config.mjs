@@ -48,6 +48,10 @@ const defaults = {
   processes: {
     maxBufferChars: 60000
   },
+  cache: {
+    maxEntries: 250,
+    remoteTtlMs: 300000
+  },
   ignore: ['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.turbo', '.cache'],
   mcpServers: {},
   activePlugins: [],
