@@ -488,3 +488,22 @@ test('project command discovery cache stays memory-only to avoid persisting scri
     assert.doesNotMatch(persisted,new RegExp(marker));
   }finally{await fs.rm(dir,{recursive:true,force:true});await fs.rm(cacheDir,{recursive:true,force:true});}
 });
+
+
+test('ProcessManager enforces a cap on concurrently running owned processes',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-process-limit-'));
+  const pm=new ProcessManager({cwd:dir,maxBufferChars:1000,maxProcesses:1});
+  try{
+    const first=await pm.start({
+      command:'first sleeper',
+      exe:process.execPath,
+      args:['-e','setInterval(()=>{},1000)'],
+      cwd:dir
+    });
+    await waitFor(()=>pm.status(first.id).running===true);
+    await assert.rejects(
+      ()=>pm.start({command:'second sleeper',exe:process.execPath,args:['-e','setInterval(()=>{},1000)'],cwd:dir}),
+      /process limit|running process/i
+    );
+  }finally{await pm.stopAll();await fs.rm(dir,{recursive:true,force:true});}
+});
