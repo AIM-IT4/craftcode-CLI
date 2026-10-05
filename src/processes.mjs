@@ -6,11 +6,12 @@ const execFileP=promisify(execFile);
 const makeId=()=>`proc-${crypto.randomBytes(4).toString('hex')}`;
 
 export class ProcessManager{
-  constructor({cwd=process.cwd(),maxBufferChars=60000}={}){this.cwd=path.resolve(cwd);this.maxBufferChars=Math.max(1000,maxBufferChars);this.jobs=new Map();}
+  constructor({cwd=process.cwd(),maxBufferChars=60000,maxProcesses=8}={}){this.cwd=path.resolve(cwd);this.maxBufferChars=Math.max(1000,maxBufferChars);this.maxProcesses=Math.max(1,Math.min(32,Number(maxProcesses||8)));this.jobs=new Map();}
   _append(job,chunk){job.output=(job.output+String(chunk||'')).slice(-this.maxBufferChars);}
   _public(job){return{id:job.id,pid:job.pid||0,command:job.command,running:job.running,exitCode:job.exitCode,signal:job.signal,startedAt:job.startedAt,endedAt:job.endedAt||null};}
   async start({command,exe,args=[],cwd=this.cwd,env={}}={}){
     if(!exe)throw new Error('Process executable is required');
+    const running=[...this.jobs.values()].filter(x=>x.running).length;if(running>=this.maxProcesses)throw new Error(`Background process limit reached (${this.maxProcesses} running process${this.maxProcesses===1?'':'es'})`);
     const id=makeId(),job={id,command:String(command||exe),exe,args:[...args],cwd:path.resolve(cwd),output:'',running:true,exitCode:null,signal:null,startedAt:new Date().toISOString(),endedAt:null,child:null,pid:0};
     const child=spawn(exe,args,{cwd:job.cwd,env:{...process.env,...env},windowsHide:true,stdio:['ignore','pipe','pipe']});
     job.child=child;job.pid=child.pid||0;this.jobs.set(id,job);
