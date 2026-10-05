@@ -151,7 +151,7 @@ async function main(){
   const startupHookContext=await plugins.hook('session.start',{cwd});if(startupHookContext?.length)session.setPluginContext(startupHookContext);
 
   const save=async()=>store.save({provider:providerId,messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort});
-  const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
+  const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await tools.close?.();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
   const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
   const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
   const setModel=x=>{const caps=client.capabilities?.(x);if(mode==='build'&&caps?.tools===false){tui?.add('notice',`Model ${x} does not advertise tool calling on ${providerConfig.label}.`);return false;}model=x;session.model=x;tui.setMeta({model:x});return true;};
