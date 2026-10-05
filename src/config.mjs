@@ -72,6 +72,9 @@ const defaults = {
     autoResume: false,
     autosave: true
   },
+  ui: {
+    style: 'claude'
+  },
   instructions: {
     files: ['AGENTS.md','CLAUDE.md','.github/copilot-instructions.md'],
     maxChars: 12000
