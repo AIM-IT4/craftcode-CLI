@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.1
+
+- Fixed long-running sessions that could start returning provider HTTP 400 errors even though a fresh session worked.
+- Auto-compaction now uses the selected model's reported context window and reserves headroom for tool schemas and model output.
+- OpenAI-compatible requests dynamically reduce output-token allowance near the context limit instead of requesting an impossible fixed output size.
+- Recognized context-length failures compact and retry once automatically without forcing the user to start a new session.
+- Interrupted or partially saved tool-call history is repaired on resume/cancellation so malformed message sequences do not poison later requests.
+- Added a live context used/window percentage in the terminal footer and Usage view, with warning pressure states.
+- Added `/doctor` for provider, model, message-protocol and context health, and expanded `/context` and `/compact` feedback.
+- Added regression coverage for context overflow recovery, provider 400 classification, dynamic output headroom, interrupted tool calls and context-pressure UI.
+
 ## 0.11.0
 
 - Added TypeScript/JavaScript AST-backed semantic code intelligence for symbols, definitions, and references.
