@@ -19,7 +19,7 @@ const id=()=>crypto.randomBytes(3).toString('hex');
 const clip=(s,n=12000)=>String(s||'').length>n?String(s).slice(0,n)+'\n… clipped':String(s||'');
 export class AgentManager{
  constructor({client,model,cwd,config,usage,skills,plugins,mcp,events={},projectInstructions=[]}){Object.assign(this,{client,model,cwd,config,usage,skills,plugins,mcp,events,projectInstructions});this.jobs=new Map();}
- list(){return[...this.jobs.values()].map(x=>({id:x.id,role:x.role,status:x.status,model:x.model,budget:x.budget,used:x.used||0,task:x.task,error:x.error||'',result:x.result||'',worktree:x.worktree||''}));}
+ list(){return[...this.jobs.values()].map(x=>({id:x.id,role:x.role,status:x.status,model:x.model,budget:x.budget,used:x.used||0,task:x.task,error:x.error||'',result:x.result||'',worktree:x.worktree||'',activity:x.activity||'',shellAllowed:!!x.shellAllowed,patchBytes:x.patchBytes||0}));}
  _emit(){this.events.onChange?.(this.list());}
  async _worktree(job){try{await execFileP('git',['rev-parse','--is-inside-work-tree'],{cwd:this.cwd});}catch{return null;}const root=path.join(APP_DIR,'worktrees',crypto.createHash('sha1').update(this.cwd).digest('hex').slice(0,10)),dir=path.join(root,job.id);await fs.mkdir(root,{recursive:true});await execFileP('git',['worktree','add','--detach',dir,'HEAD'],{cwd:this.cwd,maxBuffer:5_000_000});job.worktree=dir;return dir;}
  async _cleanup(job){if(!job.worktree)return;try{await execFileP('git',['worktree','remove','--force',job.worktree],{cwd:this.cwd,maxBuffer:5_000_000});}catch{} }
