@@ -773,5 +773,5 @@ test('footer shows model context pressure when the window is known',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),provider:'openrouter',model:'m',mode:'build',usage:fakeUsage(),showSplash:false,contextWindowTokens:32000});tui.schedule=()=>{};
   tui.setMeta({contextChars:64000,contextWindowTokens:32000});
   const line=String(tui.usageLine(140,1)).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');
-  assert.match(line,/Context 16\.0k\/32\.0k · 50%/);
+  assert.match(line,/Context 16k\/32k · 50%/);
 });
