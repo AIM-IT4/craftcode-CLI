@@ -68,7 +68,7 @@ function pickSubagentModel(ms,main){const ids=(ms||[]).filter(toolCapable).map(m
 function resolveUsagePlan(config,client,providerId){if(providerId==='codecraft')return resolvePlanTokens(config,client.planHint?.());const explicit=parseTokenAmount(config.planTokens);if(config.planTokens!=='auto'&&explicit)return{tokens:explicit,source:'config'};return{tokens:Infinity,source:'observed'};}
 const PERMISSION_PRESETS={ask:{label:'Ask',write:'ask',shell:'ask',mcp:'ask'},edit:{label:'Edit',write:'allow',shell:'ask',mcp:'ask'},auto:{label:'Auto',write:'allow',shell:'allow',mcp:'allow'},locked:{label:'Read only',write:'deny',shell:'deny',mcp:'deny'}};
 function permissionPresetOf(p={}){return Object.entries(PERMISSION_PRESETS).find(([,v])=>v.write===p.write&&v.shell===p.shell&&(p.mcp??'ask')===v.mcp)?.[0]||'ask';}
-function activityForTool(x={}){const n=String(x.name||''),d=String(x.detail||'');if(n==='search_files')return 'Searching';if(n==='read_file'||n==='list_files')return 'Inspecting';if(n==='replace_in_file'||n==='write_file')return 'Editing';if(n==='run_command'){if(/(?:^|\s)(test|pytest|jest|vitest|mocha|cargo test|go test|npm test|pnpm test|yarn test)(?:\s|$)/i.test(d))return 'Testing';if(/build|compile|tsc|vite build|next build/i.test(d))return 'Building';return 'Running command';}if(n.startsWith('git_'))return 'Checking Git';if(n==='load_skill')return 'Loading skill';if(n.includes('mcp'))return 'Connecting';if(n==='update_todo')return 'Planning';return 'Working';}
+function activityForTool(x={}){const n=String(x.name||''),d=String(x.detail||'');if(n==='semantic_code')return 'Tracing symbols';if(n==='repo_map')return 'Mapping the codebase';if(n==='search_files')return 'Searching';if(n==='read_many_files')return 'Reading files';if(n==='read_file'||n==='list_files')return 'Reading';if(n==='replace_in_file'||n==='write_file')return 'Editing';if(n==='discover_project_commands')return 'Finding project checks';if(n==='run_command'){if(/(?:^|\s)(test|pytest|jest|vitest|mocha|cargo test|go test|npm test|pnpm test|yarn test)(?:\s|$)/i.test(d))return 'Running tests';if(/lint|eslint|ruff/i.test(d))return 'Linting';if(/typecheck|type-check|tsc/i.test(d))return 'Type checking';if(/build|compile|vite build|next build/i.test(d))return 'Building';return 'Running a command';}if(n==='git_diff')return 'Reviewing the diff';if(n.startsWith('git_'))return 'Checking Git';if(n.startsWith('process_'))return 'Watching the process';if(n==='orchestrate_task')return 'Coordinating agents';if(n==='load_skill')return 'Loading guidance';if(n.includes('mcp'))return 'Connecting';if(n==='update_todo')return 'Planning';return 'Working';}
 const table=(rows,cols)=>rows.map(r=>cols.map(([k,w])=>String(r[k]??'').slice(0,w).padEnd(w)).join('  ')).join('\n');
 const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 const vercelExe=()=>process.platform==='win32'?'npx.cmd':'npx';
@@ -80,13 +80,13 @@ async function vercelCapture(args,cwd){
     p.on('exit',code=>resolve({code:code??-1,stdout,stderr}));
   });
 }
-async function vercelInteractiveLogin(cwd,tui){
+async function vercelBrowserLogin(cwd,tui){
   let who=await vercelCapture(['whoami'],cwd);
   if(who.code===0&&who.stdout.trim())return who.stdout.trim();
   tui.stop();
   try{
-    console.log('\nCraft Code → Vercel device login');
-    console.log('Approve the Vercel login in the browser/device page that opens.\n');
+    console.log('\nCraft Code → Vercel browser approval');
+    console.log('Opening Vercel OAuth device approval. No global Vercel CLI install is required.\n');
     await new Promise((resolve,reject)=>{
       const p=spawn(vercelExe(),['-y','vercel@latest','login'],{cwd,stdio:'inherit',shell:false});
       p.on('error',reject);p.on('exit',code=>code===0?resolve():reject(new Error('Vercel login exited with code '+code)));
@@ -141,7 +141,7 @@ async function main(){
   const askFn=async q=>{const m=String(q).match(/^([^:]+):\s*(.*)$/s);return tui.askApproval((m?.[1]||'action').toLowerCase(),m?.[2]||q);};
   const agents=new AgentManager({client,model:pickSubagentModel(availableModels,model),cwd,config,usage,skills,plugins,mcp,projectInstructions,events:{onChange:x=>tui?.setAgents(x)}});
   const tools=new ToolRegistry({cwd,config,skills,plugins,mcp,agents,checkpoints,yes,onNotice:()=>{},onTodo:x=>tui?.setTodos(x),askFn});
-  const thinkingWords=['Thinking','Reasoning','Reviewing','Synthesizing'];
+  const thinkingWords=['Thinking','Analyzing','Tracing the issue','Checking assumptions','Planning the next step','Looking closer','Connecting the dots','Reviewing the approach','Verifying details','Refining the answer'];
   const events={
     onTurnStart:()=>tui?.setBusy(true),
     onThinking:x=>tui?.setActivity(thinkingWords[(x?.step||0)%thinkingWords.length]),
@@ -216,7 +216,7 @@ async function main(){
       if(cmd==='/select'){tui.enterSelectionMode();return;}
       if(cmd==='/mouse'){const v=(rest[0]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /mouse on|off. Native terminal selection is the default.');tui.setMouseCapture(v==='on');return;}
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /provider, /model, /mode, /effort, /permissions and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations. Vercel uses the Vercel CLI device-login flow because Vercel MCP restricts OAuth to approved clients. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /provider, /model, /mode, /effort, /permissions, /style and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations and opens browser approval automatically when the connector supports it. Vercel uses its official OAuth device flow through a transient `npx vercel@latest` invocation, so no global Vercel CLI install is required. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
@@ -273,23 +273,23 @@ async function main(){
       }
       if(cmd==='/mcp'){
         if(rest[0]==='tools'&&rest[1]){const ts=await mcp.tools(rest[1]);tui.add('assistant',ts.map(t=>`${t.name} — ${t.description||''}`).join('\n')||'No tools.');}
-        else tui.add('assistant',mcp.list().map(x=>`${x.connected?'●':'○'} ${x.name} [${x.type}${x.oauth?' · OAuth':''}]`).join('\n')||'No MCP servers configured.');return;
+        else tui.add('assistant',mcp.list().map(x=>{const auth=x.authMode==='browser'?'Browser approval':x.authMode==='token'?'Token / existing login':x.authMode==='local'?'Local':'Direct';return`${x.connected?'●':'○'} ${x.name} [${x.type} · ${auth}]`;}).join('\n')||'No MCP servers configured.');return;
       }
       if(cmd==='/connect'){
         let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}
         name=String(name).toLowerCase();
         if(name==='vercel'){
-          tui.setNotice('Checking Vercel CLI login…',0);
+          tui.setNotice('Opening Vercel browser approval…',0);
           try{
-            const user=await vercelInteractiveLogin(cwd,tui);
+            const user=await vercelBrowserLogin(cwd,tui);
             tui.setNotice('Vercel connected',2200);
-            tui.add('assistant','Vercel CLI authenticated as `'+user+'`. Craft Code is using Vercel’s supported CLI/device-login path instead of unapproved Vercel MCP OAuth. You can now ask for projects, deployments, logs, domains, environment configuration, or REST API operations.');
+            tui.add('assistant','Vercel connected as `'+user+'` through browser/device approval. No global Vercel CLI installation is required; Craft Code invokes the official client transiently with `npx`. You can now ask for projects, deployments, logs, domains, environment configuration, or REST API operations.');
           }catch(e){tui.setNotice('Vercel not connected',2200);tui.add('notice',e.message||String(e));}
           return;
         }
         tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
       }
-      if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');if(rest[0].toLowerCase()==='vercel')return tui.add('assistant','Vercel authentication is owned by the Vercel CLI. Run `npx vercel@latest logout` if you want to revoke the local CLI session.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
+      if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');if(rest[0].toLowerCase()==='vercel')return tui.add('assistant','To revoke Vercel browser/device authorization, run `npx -y vercel@latest logout`. Craft Code does not store your Vercel password or OAuth authorization code.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
       if(cmd==='/agents'){const xs=agents.list();tui.add('assistant',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
       if(cmd==='/agent'){
         const sub=(rest[0]||'').toLowerCase();if(sub==='spawn'){const role=(rest[1]||'explorer').toLowerCase(),task=rest.slice(2).join(' ');if(!task)return tui.add('notice','Use /agent spawn <explorer|tester|reviewer|researcher|writer> <task>.');let allowShell=false;if(role==='writer')allowShell=await tui.askApproval('shell','Allow this writer subagent to run shell commands inside its isolated Git worktree for tests/verification?');const j=await agents.spawn({role,task,worktree:role==='writer',allowShell});tui.setNotice(`Spawned ${j.id}${role==='writer'&&!allowShell?' · shell verification disabled':''}`);return;}if(sub==='show'&&rest[1]){const j=agents.list().find(x=>x.id===rest[1]);if(!j)return tui.add('notice','Unknown agent id.');const meta=[j.id,j.role,j.status,`${fmtTokens(j.used||0)}/${fmtTokens(j.budget)}`,j.activity||'',j.patchBytes?`patch ${Math.round(j.patchBytes/1024)} KB`:'',j.role==='writer'?`shell ${j.shellAllowed?'allowed':'blocked'}`:''].filter(Boolean).join(' · ');return tui.add('assistant',`${meta}\n\n${j.result||j.error||'Still working…'}`);}if(sub==='apply'&&rest[1]){if(!await tui.askApproval('write',`Apply patch from ${rest[1]} to main workspace?`))return;const r=await agents.apply(rest[1]);tui.add(r.ok?'assistant':'notice',r.message);return;}return command('/agents');
@@ -338,6 +338,7 @@ async function main(){
       if(cmd==='/settings'){
         const key=(rest[0]||'').toLowerCase();if(key==='autoresume'||key==='auto-resume'){const v=(rest[1]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /settings autoresume on|off.');config.sessions=config.sessions||{};config.sessions.autoResume=v==='on';const f=await updateProjectConfig(cwd,{sessions:{autoResume:v==='on'}});return tui.setNotice(`Auto-resume ${v} · ${f}`,2200);}return tui.add('assistant',`Workspace settings\n\n- Auto-resume: **${config.sessions?.autoResume?'on':'off'}**\n- Autosave: **${config.sessions?.autosave!==false?'on':'off'}**\n- Project config: \`${path.join(cwd,'.craftcli','config.json')}\``);
       }
+      if(cmd==='/style'){const v=(rest[0]||'').toLowerCase();if(!v)return tui.add('assistant',`Visual style: **${config.ui?.style||'claude'}**\n\nUse `/style claude`, `/style classic`, or `/style minimal`. Craft Code can change glyphs, ANSI emphasis, spacing, and colors; the actual font family is controlled by your terminal application.`);if(!['claude','classic','minimal'].includes(v))return tui.add('notice','Use /style claude|classic|minimal.');config.ui={...(config.ui||{}),style:v};await updateProjectConfig(cwd,{ui:{style:v}});tui.setMeta({uiStyle:v});return tui.setNotice(`Visual style · ${v}`,1800);}
       if(cmd==='/config')return tui.add('assistant',GLOBAL_CONFIG);
       const pluginCmd=plugins.expandCommand(cmd.slice(1),arg);if(pluginCmd){tui.add('user',cmd+(arg?` ${arg}`:''));await runOne(pluginCmd.prompt);return;}
       tui.add('notice',`Unknown command · ${cmd}`);
@@ -356,7 +357,7 @@ async function main(){
   };
 
   tui=new TerminalTui({
-    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,
+    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,uiStyle:config.ui?.style||'claude',
     onSubmit:runOne,onCommand:command,onCancel:()=>session.cancel(),onExit:exit,fileRefs:refs,showSplash,
     onModelsRequest:()=>client.models(),onModelPick:setModel,onModePick:setMode,onEffortPick:setEffort,onPermissionPick:setPermissions,onPermissionCycle:cyclePermissions,onPermissionDecision:persistApproval,onQuickAction:quickAction,
     startupMeta:{skills:skills.list().length,plugins:plugins.list().length,mcp:mcp.list().length,planName:client.planHint()?.name||'',rpm:client.rateLimits.rpmLimit||0}
