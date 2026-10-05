@@ -579,3 +579,102 @@ test('legacy CodeCraftClient remains a compatibility export',async()=>{
   const {CodeCraftProvider}=await import('../src/providers/codecraft.mjs');
   assert.equal(CodeCraftClient,CodeCraftProvider);
 });
+
+
+test('agent runtime exposes batch reads, repo map and file management tools',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-runtime-tools-'));
+  await fs.mkdir(path.join(dir,'src'),{recursive:true});
+  await fs.writeFile(path.join(dir,'src','alpha.mjs'),'export function alpha() { return 1; }\nexport class Beta {}\n');
+  await fs.writeFile(path.join(dir,'src','gamma.py'),'def gamma():\n    return 3\n');
+  const skills={list:()=>[],load:async()=>({})},plugins={list:()=>[],toolEntries:()=>[],activate:()=>{}},mcp={list:()=>[],tools:async()=>[],call:async()=>({})};
+  const registry=new ToolRegistry({cwd:dir,config:{permissions:{write:'allow',shell:'deny',mcp:'deny'},ignore:[],tokenGuard:{}},skills,plugins,mcp,askFn:async()=>false});
+  try{
+    const names=registry.definitions('build').map(x=>x.function.name);
+    for(const name of ['read_many_files','repo_map','git_log','make_directory','move_file','delete_file'])assert.ok(names.includes(name),`missing ${name}`);
+    assert.equal(registry.isParallelSafe('repo_map'),true);
+    assert.equal(registry.isParallelSafe('write_file'),false);
+    const map=await registry.execute('repo_map',{path:'src'},'plan');
+    assert.match(map,/alpha\.mjs :: alpha, Beta/);
+    assert.match(map,/gamma\.py :: gamma/);
+    const batch=await registry.execute('read_many_files',{files:[{path:'src/alpha.mjs',start_line:1,end_line:1},{path:'src/gamma.py',start_line:1,end_line:2}]},'plan');
+    assert.match(batch,/## src\/alpha\.mjs/);
+    assert.match(batch,/## src\/gamma\.py/);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('agent executes independent safe tool calls concurrently',async()=>{
+  let calls=0,active=0,maxActive=0;
+  const client={rateLimits:{},stream:async({onText})=>{
+    calls++;
+    if(calls===1)return{message:{role:'assistant',content:null,tool_calls:[
+      {id:'a',type:'function',function:{name:'read_file',arguments:'{"path":"a"}'}},
+      {id:'b',type:'function',function:{name:'search_files',arguments:'{"query":"b"}'}}
+    ]},usage:{total_tokens:1},finishReason:'tool_calls'};
+    onText?.('done');return{message:{role:'assistant',content:'done'},usage:{total_tokens:1},finishReason:'stop'};
+  }};
+  const tools={
+    definitions:()=>[],
+    isParallelSafe:()=>true,
+    isMutating:()=>false,
+    isVerification:()=>false,
+    execute:async()=>{active++;maxActive=Math.max(maxActive,active);await new Promise(r=>setTimeout(r,25));active--;return'ok';}
+  };
+  const session=new AgentSession({client,model:'m',cwd:process.cwd(),mode:'plan',effort:'high',config:{maxAgentSteps:5,maxTurnSegments:2,autoCompactChars:300000,tokenGuard:{},agentRuntime:{parallelTools:true}},usage:{add:async()=>{}},skills:{list:()=>[]},plugins:{list:()=>[],hook:async()=>[]},mcp:{list:()=>[]},tools});
+  session.clear();const result=await session.run('inspect');
+  assert.equal(result.completed,true);
+  assert.equal(maxActive,2);
+});
+
+test('build-mode verification gate requests one final verification pass after edits',async()=>{
+  let calls=0;
+  const client={rateLimits:{},stream:async({onText})=>{
+    calls++;
+    if(calls===1)return{message:{role:'assistant',content:null,tool_calls:[{id:'w',type:'function',function:{name:'write_file',arguments:'{"path":"x.txt","content":"x"}'}}]},usage:{total_tokens:1},finishReason:'tool_calls'};
+    const text=calls===2?'implementation complete':'verified complete';onText?.(text);
+    return{message:{role:'assistant',content:text},usage:{total_tokens:1},finishReason:'stop'};
+  }};
+  const tools={definitions:()=>[],isParallelSafe:()=>false,isMutating:n=>n==='write_file',isVerification:()=>false,execute:async()=> 'ok'};
+  const session=new AgentSession({client,model:'m',cwd:process.cwd(),mode:'build',effort:'high',config:{maxAgentSteps:5,maxTurnSegments:3,autoCompactChars:300000,tokenGuard:{},agentRuntime:{autoVerifyEdits:true}},usage:{add:async()=>{}},skills:{list:()=>[]},plugins:{list:()=>[],hook:async()=>[]},mcp:{list:()=>[]},tools});
+  session.clear();const result=await session.run('change it');
+  assert.equal(calls,3);
+  assert.equal(result.completed,true);
+  assert.ok(session.messages.some(m=>m.role==='user'&&String(m.content).includes('[Craft Code verification gate]')));
+});
+
+test('loop guard stops identical tool batches instead of burning the full turn budget',async()=>{
+  let calls=0;
+  const client={rateLimits:{},stream:async()=>{calls++;return{message:{role:'assistant',content:null,tool_calls:[{id:'r'+calls,type:'function',function:{name:'read_file',arguments:'{"path":"same.txt"}'}}]},usage:{total_tokens:1},finishReason:'tool_calls'};}};
+  const tools={definitions:()=>[],isParallelSafe:()=>true,isMutating:()=>false,isVerification:()=>false,execute:async()=> 'same'};
+  const session=new AgentSession({client,model:'m',cwd:process.cwd(),mode:'plan',effort:'high',config:{maxAgentSteps:20,maxTurnSegments:3,autoCompactChars:300000,tokenGuard:{},agentRuntime:{loopGuardRepeats:3}},usage:{add:async()=>{}},skills:{list:()=>[]},plugins:{list:()=>[],hook:async()=>[]},mcp:{list:()=>[]},tools});
+  session.clear();const result=await session.run('do not loop');
+  assert.equal(calls,3);
+  assert.equal(result.stalled,true);
+  assert.equal(result.completed,false);
+});
+
+test('writer agents require Git isolation and preserve patches larger than 20KB',async()=>{
+  const {execFile}=await import('node:child_process');
+  const {promisify}=await import('node:util');
+  const ex=promisify(execFile);
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-writer-'));
+  await ex('git',['init'],{cwd:dir});
+  await ex('git',['config','user.email','test@example.com'],{cwd:dir});
+  await ex('git',['config','user.name','Craft Test'],{cwd:dir});
+  await fs.writeFile(path.join(dir,'seed.txt'),'seed\n');
+  await ex('git',['add','seed.txt'],{cwd:dir});
+  await ex('git',['commit','-m','seed'],{cwd:dir});
+  const big='x'.repeat(26000),skills={list:()=>[],load:async()=>({})},plugins={list:()=>[],toolEntries:()=>[],activate:()=>{},hook:async()=>[]},mcp={list:()=>[],tools:async()=>[],call:async()=>({})};
+  let calls=0;
+  const client={rateLimits:{},stream:async({onText})=>{
+    calls++;
+    if(calls===1)return{message:{role:'assistant',content:null,tool_calls:[{id:'w1',type:'function',function:{name:'write_file',arguments:JSON.stringify({path:'large.txt',content:big})}}]},usage:{total_tokens:1},finishReason:'tool_calls'};
+    const text=calls===2?'done':'verification unavailable';onText?.(text);return{message:{role:'assistant',content:text},usage:{total_tokens:1},finishReason:'stop'};
+  }};
+  const manager=new AgentManager({client,model:'m',cwd:dir,config:{maxAgentSteps:5,maxTurnSegments:3,autoCompactChars:300000,tokenGuard:{},permissions:{write:'ask',shell:'ask',mcp:'deny'},ignore:[],agents:{maxSteps:5,defaultBudgetTokens:25000,keepWorktrees:false},agentRuntime:{autoVerifyEdits:true}},usage:{add:async()=>{}},skills,plugins,mcp});
+  try{
+    const result=await manager.run({role:'writer',task:'create a large file',worktree:true,allowShell:false,budget:25000});
+    assert.equal(result.status,'done');
+    assert.ok(result.patchBytes>20000);
+    assert.ok(result.patch.length>20000);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
