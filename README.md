@@ -112,8 +112,9 @@ CodeCraft remains the default for legacy installations and existing configs/sess
 - Streaming responses with inline `Thinking…`, search, read, edit, test and review activity.
 - Native terminal drag-selection + `Ctrl+C` copying works by default. Mouse wheel, Up/Down and PageUp/PageDown scroll the transcript; prompt history uses `Ctrl+P` / `Ctrl+N`. In native-selection mode Craft Code uses terminal alternate-scroll translation, while `/mouse on` switches to direct SGR mouse-wheel events. Clickable mouse controls are optional via `/mouse on`; `/mouse off` restores native selection.
 - Inline red/green code edit previews directly under edit tool cards.
-- Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
+- Interactive `/model`, `/mode`, `/effort`, `/permissions`, `/style` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
 - Live context-window pressure in the footer plus `/doctor` health checks; long sessions compact before overflow and recover once automatically from recognized provider context/message-sequence 400s.
+- Claude-inspired inline activity language (`✻ Thinking…`, `Tracing symbols…`, `Running tests…`, `Reviewing the diff…`) with `/style claude|classic|minimal`. Font family remains a terminal setting.
 - File attachment/autocomplete with `@path/to/file`.
 - Git checkpoints and `/undo`.
 - Shell shortcut syntax such as `!git status` through command policy and the normal permission layer.
@@ -191,7 +192,7 @@ Use:
 /mcp
 ```
 
-Craft Code supports stdio and HTTP MCP transports, lazy tool discovery and browser OAuth where the server supports it. GitHub, Vercel, Supabase and other MCP services can sit behind the same permission model as local shell/file actions.
+Craft Code supports stdio and HTTP MCP transports, lazy tool discovery and browser OAuth where the server supports it. Connector pickers identify Browser approval, Token / existing login, and Local service flows explicitly. `/connect vercel` launches Vercel's browser/device approval automatically through a transient `npx -y vercel@latest` invocation, so a global Vercel CLI install is not required. GitHub, Vercel, Supabase and other integrations remain behind the same permission model as local shell/file actions.
 
 ### Project-native instructions
 
