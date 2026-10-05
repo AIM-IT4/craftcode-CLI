@@ -31,6 +31,11 @@ CLI authentication:
 - `/agents`
 - `/agent spawn <role> <task>`
 - `/team [count] <task>`
+- `/orchestrate <task>` — planner → dependency-aware read-only workers → reviewer
+
+## Runtime evaluation
+
+- `craftcode eval runtime` — credential-free checks for semantic lookup, shell policy, process lifecycle, command discovery and persistent cache
 
 ## Context and project
 
@@ -56,4 +61,6 @@ CLI authentication:
 - `/diff`
 - `/checkpoints`
 - `/undo`
-- `!git status` — shell shortcut through normal permissions
+- `!git status` — shell shortcut through command policy + normal permissions
+
+Long-running commands are handled through agent process tools (`process_start`, `process_logs`, `process_status`, `process_stop`) so dev servers do not consume foreground command timeouts.
