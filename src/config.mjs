@@ -60,6 +60,7 @@ const defaults = {
     maxParallel: 4,
     defaultBudgetTokens: 120000,
     maxSteps: 8,
+    maxOrchestrationTasks: 6,
     keepWorktrees: false
   },
   claudePlugins: {
