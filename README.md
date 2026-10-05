@@ -56,7 +56,7 @@ Most coding agents hide at least one important thing: context growth, permission
 | Terminal UX | Full-screen interactive TUI with streaming, command palette, inline tool activity and clickable controls |
 | Sessions | Search, resume, rename, fork, export and optional per-workspace auto-resume |
 | Agents | Parallel bounded subagents, dependency-aware orchestration and isolated Git worktree writers |
-| Context | `@file` references, compaction, project instructions and bounded reads |
+| Context | `@file` references, model-window-aware compaction, interrupted-turn recovery, project instructions and bounded reads |
 | Skills | Lazy `SKILL.md` loading with `.claude/skills` and `.agents/skills` compatibility |
 | Plugins | Claude-style marketplaces, commands, skills and opt-in lifecycle hooks |
 | Connectors | MCP over stdio/HTTP with OAuth support where available |
@@ -113,6 +113,7 @@ CodeCraft remains the default for legacy installations and existing configs/sess
 - Native terminal drag-selection + `Ctrl+C` copying works by default. Mouse wheel, Up/Down and PageUp/PageDown scroll the transcript; prompt history uses `Ctrl+P` / `Ctrl+N`. In native-selection mode Craft Code uses terminal alternate-scroll translation, while `/mouse on` switches to direct SGR mouse-wheel events. Clickable mouse controls are optional via `/mouse on`; `/mouse off` restores native selection.
 - Inline red/green code edit previews directly under edit tool cards.
 - Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
+- Live context-window pressure in the footer plus `/doctor` health checks; long sessions compact before overflow and recover once automatically from recognized provider context/message-sequence 400s.
 - File attachment/autocomplete with `@path/to/file`.
 - Git checkpoints and `/undo`.
 - Shell shortcut syntax such as `!git status` through command policy and the normal permission layer.
@@ -232,7 +233,8 @@ Craft Code was built to avoid common agent-token waste:
 - bounded file/search/terminal output;
 - lazy skill loading;
 - lazy MCP tool-schema discovery;
-- context compaction;
+- model-window-aware context compaction with output/tool-schema headroom;
+- automatic repair/retry for interrupted tool-call history and recognized context-length 400s;
 - per-agent budgets and TPM-aware parallelism;
 - visible request/session/day/month usage;
 - adaptive TPM pacing when the active provider exposes live token-rate headers, `Retry-After`/reset-aware retries, and TPM-aware subagent concurrency.

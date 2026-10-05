@@ -40,8 +40,9 @@ CLI authentication:
 ## Context and project
 
 - `/status`
-- `/context`
-- `/compact`
+- `/context` — context composition, model-window pressure and automatic compaction thresholds
+- `/doctor` — check provider, model, message-protocol and context health
+- `/compact` — compact older session history while preserving recent work
 - `/init`
 - `/instructions`
 - `/instructions reload`
