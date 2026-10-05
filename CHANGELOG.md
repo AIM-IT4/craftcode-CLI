@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.2
+
+Released: 2026-10-05.
+
+- Ships the long-session HTTP 400 recovery fix on a new immutable npm version because 0.11.1 had already been published.
+- Adds model-window-aware context budgeting, proactive compaction, provider context-error retry, interrupted tool-call repair, context-pressure UX, and `/doctor` session health checks.
+
 ## 0.11.1
 
 Released: 2026-10-05.
