@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 
 import {SemanticIndex} from '../src/semantic.mjs';
 import {ToolRegistry} from '../src/tools.mjs';
@@ -10,6 +12,10 @@ import {AgentManager} from '../src/agents.mjs';
 import {CommandPolicy} from '../src/policy.mjs';
 import {ProcessManager} from '../src/processes.mjs';
 import {discoverProjectCommands} from '../src/project_commands.mjs';
+import {ToolCache} from '../src/cache.mjs';
+import {runRuntimeEvals} from '../src/evals.mjs';
+
+const execFileP=promisify(execFile);
 
 const deps=()=>({
   skills:{list:()=>[],load:async()=>({})},
@@ -295,4 +301,74 @@ test('ToolRegistry exposes read-only orchestrate_task when delegation is availab
   const registry=new ToolRegistry({cwd:process.cwd(),config:{permissions:{},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},skills,plugins,mcp,agents});
   const plan=new Set(registry.definitions('plan').map(x=>x.function.name));
   assert.ok(plan.has('orchestrate_task'));
+});
+
+
+test('ToolCache persists safe results across instances and respects version keys',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-'));
+  try{
+    const one=new ToolCache({cwd:process.cwd(),dir,maxEntries:20});
+    await one.set('read_file',{path:'a.txt'},'v1','cached-value',{ttlMs:60000});
+    const two=new ToolCache({cwd:process.cwd(),dir,maxEntries:20});
+    const hit=await two.get('read_file',{path:'a.txt'},'v1');
+    assert.equal(hit.hit,true);
+    assert.equal(hit.value,'cached-value');
+    const stale=await two.get('read_file',{path:'a.txt'},'v2');
+    assert.equal(stale.hit,false);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('ToolRegistry caches identical file reads and invalidates cache after workspace writes',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-tools-'));
+  const cacheDir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-store-'));
+  const {skills,plugins,mcp}=deps();
+  try{
+    await fs.writeFile(path.join(dir,'a.txt'),'one\n');
+    const cache=new ToolCache({cwd:dir,dir:cacheDir,maxEntries:50});
+    const registry=new ToolRegistry({
+      cwd:dir,config:{permissions:{write:'allow',shell:'deny'},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},
+      skills,plugins,mcp,cache
+    });
+    const first=await registry.execute('read_file',{path:'a.txt'},'plan');
+    const second=await registry.execute('read_file',{path:'a.txt'},'plan');
+    assert.equal(second,first);
+    const before=await registry.execute('cache_stats',{},'plan');
+    assert.ok(before.hits>=1,before);
+    await registry.execute('write_file',{path:'a.txt',content:'two\n'},'build');
+    const third=await registry.execute('read_file',{path:'a.txt'},'plan');
+    assert.match(third,/two/);
+    assert.doesNotMatch(third,/one/);
+    const after=await registry.execute('cache_stats',{},'plan');
+    assert.ok(after.invalidations>=1,after);
+  }finally{await fs.rm(dir,{recursive:true,force:true});await fs.rm(cacheDir,{recursive:true,force:true});}
+});
+
+test('ToolCache semantic path version changes when source metadata changes',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-semantic-'));
+  const cacheDir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-semantic-store-'));
+  try{
+    await fs.writeFile(path.join(dir,'a.ts'),'export const a=1;\n');
+    const cache=new ToolCache({cwd:dir,dir:cacheDir});
+    const v1=await cache.versionFor('semantic_code',{action:'symbols',path:'.'});
+    await fs.writeFile(path.join(dir,'a.ts'),'export const alphabet=100;\n');
+    const v2=await cache.versionFor('semantic_code',{action:'symbols',path:'.'});
+    assert.notEqual(v1,v2);
+  }finally{await fs.rm(dir,{recursive:true,force:true});await fs.rm(cacheDir,{recursive:true,force:true});}
+});
+
+test('runtime eval suite is deterministic and credential-free',async()=>{
+  const r=await runRuntimeEvals();
+  assert.ok(r.total>=5);
+  assert.equal(r.failed,0,JSON.stringify(r.cases.filter(x=>!x.ok)));
+  assert.equal(r.passed,r.total);
+  assert.ok(r.cases.every(x=>typeof x.name==='string'&&typeof x.ok==='boolean'));
+});
+
+test('craftcode eval runtime runs before provider authentication',async()=>{
+  const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
+  const env={...process.env};
+  delete env.CODECRAFT_API_KEY;delete env.OPENROUTER_API_KEY;
+  const {stdout}=await execFileP(process.execPath,['src/index.mjs','eval','runtime'],{cwd:root,env});
+  assert.match(stdout,/Runtime evals/i);
+  assert.match(stdout,/passed/i);
 });
