@@ -2,6 +2,8 @@
 
 ## 0.11.1
 
+Released: 2026-10-05.
+
 - Fixed long-running sessions that could start returning provider HTTP 400 errors even though a fresh session worked.
 - Auto-compaction now uses the selected model's reported context window and reserves headroom for tool schemas and model output.
 - OpenAI-compatible requests dynamically reduce output-token allowance near the context limit instead of requesting an impossible fixed output size.
