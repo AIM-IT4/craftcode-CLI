@@ -1,3 +1,5 @@
+import {classifyProviderError,estimateTokens,providerErrorSummary} from '../context.mjs';
+
 const abortError=()=>new DOMException('Aborted','AbortError');
 const sleep=(ms,signal)=>new Promise((resolve,reject)=>{if(signal?.aborted)return reject(abortError());const t=setTimeout(done,ms);function done(){signal?.removeEventListener?.('abort',stop);resolve();}function stop(){clearTimeout(t);reject(abortError());}signal?.addEventListener?.('abort',stop,{once:true});});
 const resetMsFromValue=raw=>{
@@ -18,6 +20,13 @@ const retryMs=(r,attempt=0)=>{
   return Math.min(15_000,1500*(2**attempt));
 };
 const unknownCaps=()=>({tools:'unknown',reasoning:'unknown',vision:'unknown',structuredOutput:'unknown',contextWindow:null});
+class ProviderRequestError extends Error{
+  constructor(label,status,body,{code=null,contextWindow=null,inputTokens=null}={}){
+    const resolved=code||classifyProviderError(status,body);
+    super(`${label} ${status||'request'}: ${providerErrorSummary(body)}`);
+    this.name='ProviderRequestError';this.status=status||0;this.body=String(body||'');this.code=resolved;this.contextWindow=contextWindow;this.inputTokens=inputTokens;
+  }
+}
 
 export class OpenAICompatibleClient{
   constructor({id='custom',label='OpenAI Compatible',apiKey='',baseUrl,maxOutputTokens=8192,onRateLimit=null,maxRateLimitRetries=4,extraHeaders={}}={}){
@@ -33,15 +42,19 @@ export class OpenAICompatibleClient{
   _resetDelayMs(){return resetMsFromValue(this.rateLimits.reset);}
   _refreshWindowIfElapsed(){const d=this._resetDelayMs();if(d===0&&this.rateLimits.tpmLimit){this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;if(this.rateLimits.rpmLimit)this.rateLimits.rpmRemaining=this.rateLimits.rpmLimit;}}
   async _waitGate(signal){if(signal?.aborted)throw abortError();const ms=this.rateGate-Date.now();if(ms>0)await sleep(ms,signal);this._refreshWindowIfElapsed();if(signal?.aborted)throw abortError();}
-  estimateRequestTokens(messages,tools){const chars=JSON.stringify(messages||[]).length+JSON.stringify(tools||[]).length;return Math.max(1,Math.ceil(chars/4)+Math.min(this.maxOutputTokens,4096));}
+  estimateInputTokens(messages,tools){return estimateTokens(messages||[])+estimateTokens(tools||[]);}
+  estimateRequestTokens(messages,tools){return this.estimateInputTokens(messages,tools)+Math.min(this.maxOutputTokens,4096);}
   async _reserveRateBudget(estimated,signal){
     await this._waitGate(signal);const tpm=this.rateLimits.tpmLimit,remaining=this.rateLimits.tpmRemaining;
     if(tpm&&remaining!=null){const available=Math.max(0,remaining-this.inFlightEstimatedTokens),headroom=Math.max(2000,Math.floor(tpm*0.04));if(estimated+headroom>available&&remaining<tpm){const ms=Math.max(750,this._resetDelayMs()??1500);this.rateGate=Math.max(this.rateGate,Date.now()+ms);this.onRateLimit?.({attempt:0,retryMs:ms,tpmLimit:tpm,tpmRemaining:remaining,message:'Proactive TPM pacing',proactive:true,estimatedTokens:estimated,provider:this.id});await this._waitGate(signal);if(this.rateLimits.tpmLimit)this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;}}
     this.inFlightEstimatedTokens+=estimated;let released=false;return()=>{if(released)return;released=true;this.inFlightEstimatedTokens=Math.max(0,this.inFlightEstimatedTokens-estimated);};
   }
   async stream({model,messages,tools,onText,signal}){
-    const body={model,messages,stream:true,max_tokens:this.maxOutputTokens};if(tools?.length){body.tools=tools;body.tool_choice='auto';}
-    const estimated=this.estimateRequestTokens(messages,tools),release=await this._reserveRateBudget(estimated,signal);let r,last429='';
+    const inputTokens=this.estimateInputTokens(messages,tools),contextWindow=this.capabilities(model)?.contextWindow||0,safety=contextWindow?Math.max(512,Math.floor(contextWindow*.02)):0;
+    if(contextWindow&&inputTokens>=contextWindow-safety)throw new ProviderRequestError(this.label,0,`Estimated input ${inputTokens} tokens exceeds the ${contextWindow}-token model context window.`,{code:'CONTEXT_LENGTH',contextWindow,inputTokens});
+    const outputTokens=contextWindow?Math.max(256,Math.min(this.maxOutputTokens,contextWindow-inputTokens-safety)):this.maxOutputTokens;
+    const body={model,messages,stream:true,max_tokens:outputTokens};if(tools?.length){body.tools=tools;body.tool_choice='auto';}
+    const estimated=inputTokens+Math.min(outputTokens,4096),release=await this._reserveRateBudget(estimated,signal);let r,last429='';
     try{
       for(let attempt=0;attempt<=this.maxRateLimitRetries;attempt++){
         await this._waitGate(signal);if(signal?.aborted)throw abortError();
@@ -49,7 +62,7 @@ export class OpenAICompatibleClient{
         if(r.status!==429)break;last429=await r.text();if(attempt>=this.maxRateLimitRetries)throw new Error(`${this.label} 429 after ${attempt+1} attempts: ${last429}`);
         const ms=retryMs(r,attempt);this.rateGate=Math.max(this.rateGate,Date.now()+ms);this.onRateLimit?.({attempt:attempt+1,retryMs:ms,tpmLimit:this.rateLimits.tpmLimit,tpmRemaining:this.rateLimits.tpmRemaining,message:last429,proactive:false,estimatedTokens:estimated,provider:this.id});await this._waitGate(signal);if(this.rateLimits.tpmLimit)this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;
       }
-      if(!r.ok)throw new Error(`${this.label} ${r.status}: ${await r.text()}`);if(!r.body)throw new Error(`${this.label} returned no stream body`);
+      if(!r.ok){const bodyText=await r.text();throw new ProviderRequestError(this.label,r.status,bodyText);}if(!r.body)throw new Error(`${this.label} returned no stream body`);
       const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',content='',usage=null,finishReason=null;const calls=new Map();
       const consume=line=>{line=line.trim();if(!line.startsWith('data:'))return;const raw=line.slice(5).trim();if(!raw||raw==='[DONE]')return;let c;try{c=JSON.parse(raw);}catch{return;}if(c.usage)usage=c.usage;const choice=c.choices?.[0];if(!choice)return;if(choice.finish_reason)finishReason=choice.finish_reason;const d=choice.delta||{};if(typeof d.content==='string'){content+=d.content;onText?.(d.content);}for(const tc of d.tool_calls||[]){const idx=tc.index??calls.size,cur=calls.get(idx)||{id:'',type:'function',function:{name:'',arguments:''}};if(tc.id)cur.id=tc.id;if(tc.function?.name)cur.function.name+=tc.function.name;if(tc.function?.arguments)cur.function.arguments+=tc.function.arguments;calls.set(idx,cur);}};
       try{while(true){const{value,done}=await reader.read();if(done)break;buf+=decoder.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){consume(buf.slice(0,i));buf=buf.slice(i+1);}}}finally{try{reader.releaseLock();}catch{}}if(buf.trim())consume(buf);
