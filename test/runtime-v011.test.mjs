@@ -373,3 +373,66 @@ test('craftcode eval runtime runs before provider authentication',async()=>{
   assert.match(stdout,/Runtime evals/i);
   assert.match(stdout,/passed/i);
 });
+
+
+test('host command policy approval cannot be bypassed through opaque interpreters or project scripts',()=>{
+  const host=new CommandPolicy({cwd:process.cwd(),sandbox:'host'});
+  for(const command of [
+    "node -e \"require('node:child_process').execSync('rm -rf build')\"",
+    "python -c \"import os; os.system('rm -rf build')\"",
+    "bash -c 'rm -rf build'",
+    'npm test',
+    'npm run build',
+    'node --test test/basic.test.mjs',
+    'rm -rf build'
+  ]){
+    const r=host.evaluate(command);
+    assert.equal(r.decision,'ask',command);
+    assert.ok(['project-code','opaque','destructive'].includes(r.kind),`${command}: ${r.kind}`);
+  }
+  assert.equal(host.evaluate('node --version').decision,'allow');
+  assert.equal(host.evaluate('git status').decision,'allow');
+});
+
+test('Docker shell policy can auto-run project verification but applies hardening flags',()=>{
+  const docker=new CommandPolicy({cwd:process.cwd(),sandbox:'docker'});
+  assert.equal(docker.evaluate('npm test').decision,'allow');
+  const r=docker.wrap('npm test');
+  for(const pair of [['--network','none'],['--cap-drop','ALL'],['--security-opt','no-new-privileges'],['--pids-limit','256']]){
+    const i=r.args.indexOf(pair[0]);assert.ok(i>=0,pair[0]);assert.equal(r.args[i+1],pair[1]);
+  }
+  assert.ok(r.args.includes('--memory'));
+  assert.ok(r.args.includes('--cpus'));
+});
+
+test('ToolRegistry never persists raw local file contents in the disk cache',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-secret-work-'));
+  const cacheDir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-secret-store-'));
+  const {skills,plugins,mcp}=deps();
+  try{
+    const secret='CRAFT_TEST_SECRET_9bb85e';
+    await fs.writeFile(path.join(dir,'.env'),`TOKEN=${secret}\n`);
+    const registry=new ToolRegistry({
+      cwd:dir,config:{permissions:{},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},
+      skills,plugins,mcp,cache:new ToolCache({cwd:dir,dir:cacheDir})
+    });
+    const first=await registry.execute('read_file',{path:'.env'},'plan');
+    const second=await registry.execute('read_file',{path:'.env'},'plan');
+    assert.equal(first,second);
+    assert.ok((await registry.execute('cache_stats',{},'plan')).hits>=1);
+    const files=await fs.readdir(cacheDir);
+    let persisted='';for(const name of files)persisted+=await fs.readFile(path.join(cacheDir,name),'utf8').catch(()=> '');
+    assert.doesNotMatch(persisted,new RegExp(secret));
+  }finally{await fs.rm(dir,{recursive:true,force:true});await fs.rm(cacheDir,{recursive:true,force:true});}
+});
+
+test('ToolCache persistent files are private on POSIX',async t=>{
+  if(process.platform==='win32'){t.skip('POSIX mode bits do not apply on Windows');return;}
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-cache-mode-'));
+  try{
+    const cache=new ToolCache({cwd:process.cwd(),dir});
+    await cache.set('fetch_url',{url:'https://example.test'},'remote-v1','public',{ttlMs:1000});
+    const mode=(await fs.stat(cache.file)).mode&0o777;
+    assert.equal(mode&0o077,0);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
