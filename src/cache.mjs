@@ -48,7 +48,7 @@ export class ToolCache{
   constructor({cwd=process.cwd(),dir=path.join(os.homedir(),'.craftcli','cache'),maxEntries=250}={}){
     this.cwd=path.resolve(cwd);this.dir=path.resolve(dir);this.maxEntries=Math.max(10,maxEntries);
     this.file=path.join(this.dir,`${hash(this.cwd).slice(0,20)}.json`);
-    this.data=null;this.metrics={hits:0,misses:0,sets:0,invalidations:0};
+    this.data=null;this.volatile=new Map();this.metrics={hits:0,misses:0,sets:0,invalidations:0};
   }
   async _load(){
     if(this.data)return this.data;
@@ -57,10 +57,10 @@ export class ToolCache{
     return this.data;
   }
   async _save(){
-    await fs.mkdir(this.dir,{recursive:true});
+    await fs.mkdir(this.dir,{recursive:true,mode:0o700});await fs.chmod(this.dir,0o700).catch(()=>{});
     const entries=Object.entries(this.data.entries||{}).sort((a,b)=>(b[1].at||0)-(a[1].at||0)).slice(0,this.maxEntries);
     this.data.entries=Object.fromEntries(entries);
-    await fs.writeFile(this.file,JSON.stringify(this.data));
+    await fs.writeFile(this.file,JSON.stringify(this.data),{mode:0o600});await fs.chmod(this.file,0o600).catch(()=>{});
   }
   _key(name,args,version){return hash(JSON.stringify(stable({name,args,version})));}
   async get(name,args,version){
@@ -73,8 +73,18 @@ export class ToolCache{
     const data=await this._load(),key=this._key(name,args,version),now=Date.now();
     data.entries[key]={at:now,expiresAt:ttlMs?now+Math.max(1,ttlMs):0,value};this.metrics.sets++;await this._save();return value;
   }
-  async invalidateWorkspace(){this.data={entries:{}};this.metrics.invalidations++;await this._save();}
-  stats(){return{...this.metrics,entries:Object.keys(this.data?.entries||{}).length,file:this.file};}
+  getVolatile(name,args,version){
+    const key=this._key(name,args,version),entry=this.volatile.get(key);
+    if(!entry){this.metrics.misses++;return{hit:false,value:null};}
+    this.metrics.hits++;return{hit:true,value:entry.value};
+  }
+  setVolatile(name,args,version,value){
+    const key=this._key(name,args,version);this.volatile.set(key,{value,at:Date.now()});
+    while(this.volatile.size>Math.min(100,this.maxEntries))this.volatile.delete(this.volatile.keys().next().value);
+    this.metrics.sets++;return value;
+  }
+  async invalidateWorkspace(){this.data={entries:{}};this.volatile.clear();this.metrics.invalidations++;await this._save();}
+  stats(){return{...this.metrics,entries:Object.keys(this.data?.entries||{}).length,volatileEntries:this.volatile.size,file:this.file};}
   async versionFor(name,args={}){
     if(name==='read_file')return statVersion(safePath(this.cwd,args.path));
     if(name==='read_many_files'){
