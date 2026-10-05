@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- Added TypeScript/JavaScript AST-backed semantic code intelligence for symbols, definitions, and references.
+- Added a hardened shell policy that denies catastrophic commands and approval-gates project-code, destructive, network, publish, deploy, and opaque interpreter execution.
+- Added optional Docker sandbox execution with no network, dropped capabilities, resource limits, a read-only workspace mount, and temporary writable scratch space.
+- Added dependency-aware planner → read-only workers → reviewer orchestration with cycle, role, and task-count validation.
+- Added persistent safe-tool caching, volatile raw local-file caching, workspace invalidation, privacy protections, and cache metrics.
+- Added owned long-running process handles with bounded logs, stop/status/list operations, exit cleanup, and a configurable concurrency cap.
+- Added automatic project command discovery for test, lint, typecheck, build, and dev workflows.
+- Added deterministic credential-free runtime evaluations and expanded cross-platform regression/security coverage.
+- Retained provider-neutral CodeCraft/OpenRouter/OpenAI-compatible operation and existing permission/checkpoint controls.
+
 ## 0.10.0
 
 - Refactored Craft Code into a provider-agnostic coding-agent runtime.
