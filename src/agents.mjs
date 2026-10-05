@@ -9,12 +9,37 @@ import {ToolRegistry} from './tools.mjs';
 import {CheckpointManager} from './checkpoints.mjs';
 const execFileP=promisify(execFile);
 const ROLES={
+ planner:'Decompose the parent task into a small read-only dependency graph. Return strict JSON only, with a top-level tasks array; each task has id, role, task, and dependsOn.',
  explorer:'Inspect the repository narrowly, identify relevant files and likely implementation path. Do not modify files.',
  researcher:'Research the requested technical question using available local skills/connectors. Return concise evidence and recommendations. Do not modify files.',
  tester:'Inspect tests, failure modes, and verification strategy. You may run read-only test discovery but do not modify files.',
  reviewer:'Review the relevant implementation/diff for correctness, regressions, security, and missing tests. Do not modify files.',
  writer:'Implement the assigned change in an isolated Git worktree. Run focused verification only when shell execution was explicitly authorized, and return the patch summary.'
 };
+const READ_ONLY_ORCHESTRATION_ROLES=new Set(['explorer','tester','reviewer','researcher']);
+function parseOrchestrationPlan(text,maxTasks=6){
+  const raw=String(text||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
+  const start=raw.indexOf('{'),end=raw.lastIndexOf('}');
+  if(start<0||end<=start)throw new Error('Planner did not return a JSON task graph');
+  let data;try{data=JSON.parse(raw.slice(start,end+1));}catch(e){throw new Error(`Planner returned invalid JSON: ${e.message}`);}
+  if(!Array.isArray(data.tasks)||!data.tasks.length)throw new Error('Planner task graph requires a non-empty tasks array');
+  if(data.tasks.length>maxTasks)throw new Error(`Planner task graph exceeds ${maxTasks} tasks`);
+  const ids=new Set(),tasks=data.tasks.map((x,idx)=>{
+    const id=String(x?.id||'').trim(),role=String(x?.role||'').trim(),task=String(x?.task||'').trim(),dependsOn=Array.isArray(x?.dependsOn)?x.dependsOn.map(String):[];
+    if(!id||ids.has(id))throw new Error(`Planner task id is missing or duplicated at index ${idx}`);
+    if(!READ_ONLY_ORCHESTRATION_ROLES.has(role))throw new Error(`Orchestration workers are read-only; role ${role||'(missing)'} is not allowed`);
+    if(!task)throw new Error(`Planner task ${id} is missing task text`);
+    ids.add(id);return{id,role,task,dependsOn};
+  });
+  for(const x of tasks)for(const dep of x.dependsOn)if(!ids.has(dep)||dep===x.id)throw new Error(`Invalid dependency ${dep} for task ${x.id}`);
+  const indegree=new Map(tasks.map(x=>[x.id,x.dependsOn.length])),next=new Map(tasks.map(x=>[x.id,[]]));
+  for(const x of tasks)for(const dep of x.dependsOn)next.get(dep).push(x.id);
+  const q=tasks.filter(x=>indegree.get(x.id)===0).map(x=>x.id);let seen=0;
+  while(q.length){const id=q.shift();seen++;for(const n of next.get(id)){indegree.set(n,indegree.get(n)-1);if(indegree.get(n)===0)q.push(n);}}
+  if(seen!==tasks.length)throw new Error('Planner dependency graph contains a cycle');
+  return{tasks};
+}
+
 const id=()=>crypto.randomBytes(3).toString('hex');
 const clip=(s,n=12000)=>String(s||'').length>n?String(s).slice(0,n)+'\n… clipped':String(s||'');
 export class AgentManager{
@@ -25,6 +50,31 @@ export class AgentManager{
  async _cleanup(job){if(!job.worktree)return;try{await execFileP('git',['worktree','remove','--force',job.worktree],{cwd:this.cwd,maxBuffer:5_000_000});}catch{} }
  async run({role='explorer',task,model,budget,worktree=false,allowShell=false}){if(!task)throw new Error('Agent task is required');role=ROLES[role]?role:'explorer';const job={id:`${role}-${id()}`,role,task,status:'starting',model:model||this.model,budget:Math.max(25_000,Number(budget||this.config.agents?.defaultBudgetTokens||120_000)),used:0,startedAt:Date.now(),shellAllowed:role==='writer'&&!!allowShell};this.jobs.set(job.id,job);this._emit();let agentCwd=this.cwd;
    try{if(worktree||role==='writer'){const isolated=await this._worktree(job);if(!isolated)throw new Error('Writer agents require a Git repository because edits must run in an isolated worktree.');agentCwd=isolated;}job.status='running';this._emit();const subHook=await this.plugins.hook('subagent.start',{role,task,cwd:agentCwd});const childConfig=structuredClone(this.config);childConfig.permissions={write:role==='writer'?'allow':'deny',shell:role==='writer'&&allowShell?'allow':'deny',mcp:'deny'};childConfig.maxAgentSteps=Math.min(childConfig.maxAgentSteps||20,this.config.agents?.maxSteps||10);const checkpoints=role==='writer'?await new CheckpointManager(agentCwd).init():null;let lastText='';const tools=new ToolRegistry({cwd:agentCwd,config:childConfig,skills:this.skills,plugins:this.plugins,mcp:this.mcp,checkpoints,yes:false,askFn:async()=>false,allowDelegation:false});const events={onText:t=>{lastText+=t;},onUsage:u=>{job.used+=(u?.total_tokens||0);this._emit();},onToolStart:x=>{job.activity=x.name;this._emit();},onToolEnd:()=>{job.activity='';this._emit();}};const session=new AgentSession({client:this.client,model:job.model,cwd:agentCwd,mode:role==='writer'?'build':'plan',effort:'normal',config:childConfig,usage:this.usage,skills:this.skills,plugins:this.plugins,mcp:this.mcp,tools,checkpoints,events,turnTokenBudget:job.budget,projectInstructions:this.projectInstructions});session.clear();if(subHook?.length)session.setPluginContext(subHook);const shellNote=role==='writer'?(allowShell?'Shell verification is authorized for this isolated worktree.':'Shell execution is not authorized; make the code change but do not claim tests ran.'):'Read-only role: do not modify files.';const prompt=`You are a ${role} subagent. ${ROLES[role]}\n${shellNote}\n\nParent task:\n${task}\n\nStay within roughly ${job.budget} tokens and return only useful findings/results for the supervisor.`;const rr=await session.run(prompt);job.used=Math.max(job.used,rr.totalThisTurn||0);let patch='';if(job.worktree){try{await execFileP('git',['add','-N','.'],{cwd:agentCwd,maxBuffer:8_000_000});}catch{}try{patch=(await execFileP('git',['diff','--binary','HEAD'],{cwd:agentCwd,maxBuffer:30_000_000})).stdout;}catch{}}job.status='done';job.result=clip(lastText||rr.text||'No textual result.');job.patch=patch;job.patchBytes=Buffer.byteLength(patch||'');job.durationMs=Date.now()-job.startedAt;this._emit();return{...job};}catch(e){job.status='error';job.error=e.message||String(e);job.durationMs=Date.now()-job.startedAt;this._emit();return{...job};}finally{if(job.worktree&&this.config.agents?.keepWorktrees!==true)await this._cleanup(job);}}
+ async orchestrate({task,maxWorkers=3,budgetPerAgent,model}={}){
+   if(!task)throw new Error('Orchestration task is required');
+   const maxTasks=Math.max(1,Math.min(8,this.config.agents?.maxOrchestrationTasks||6));
+   const budget=Math.max(25_000,Number(budgetPerAgent||this.config.agents?.defaultBudgetTokens||120_000));
+   const planner=await this.run({role:'planner',task:`Plan this task as at most ${maxTasks} read-only work items. Allowed roles: explorer, tester, researcher, reviewer. Use dependsOn only for real prerequisites. Return JSON only: {"tasks":[{"id":"short-id","role":"explorer","task":"specific work","dependsOn":[]}]}\n\nTask:\n${task}`,model,budget:Math.min(budget,80_000)});
+   if(planner.status!=='done')throw new Error(`Planner failed: ${planner.error||planner.result||planner.status}`);
+   const plan=parseOrchestrationPlan(planner.result,maxTasks),pending=new Map(plan.tasks.map(x=>[x.id,x])),done=new Map(),workers=[];
+   const limit=Math.max(1,Math.min(Number(maxWorkers||3),this.parallelLimit(),6));
+   while(pending.size){
+     const ready=[...pending.values()].filter(x=>x.dependsOn.every(d=>done.has(d)));
+     if(!ready.length)throw new Error('Planner dependency graph cannot make progress');
+     for(let off=0;off<ready.length;off+=limit){
+       const batch=ready.slice(off,off+limit);
+       const rs=await Promise.all(batch.map(x=>{
+         const deps=x.dependsOn.map(d=>`[${d}] ${done.get(d)?.result||done.get(d)?.error||'no result'}`).join('\n');
+         const workerTask=`${x.task}${deps?`\n\nDependency evidence:\n${deps}`:''}\n\nParent objective:\n${task}`;
+         return this.run({role:x.role,task:workerTask,model,budget});
+       }));
+       rs.forEach((r,idx)=>{const spec=batch[idx],entry={...r,id:spec.id,plannedRole:spec.role,dependsOn:spec.dependsOn};workers.push(entry);done.set(spec.id,entry);pending.delete(spec.id);});
+     }
+   }
+   const evidence=workers.map(x=>`[${x.id} · ${x.plannedRole} · ${x.status}]\n${clip(x.result||x.error||'',5000)}`).join('\n\n');
+   const review=await this.run({role:'reviewer',task:`Review the worker evidence against the parent objective. Reconcile conflicts, call out missing verification, and give the supervisor a concise final synthesis.\n\nParent objective:\n${task}\n\nWorker evidence:\n${evidence}`,model,budget:Math.min(budget,100_000)});
+   return{plan,planner,workers,review};
+ }
  parallelLimit(){const configured=Math.max(1,Math.min(6,this.config.agents?.maxParallel||4)),tpm=this.client.rateLimits?.tpmLimit;if(!tpm)return Math.min(2,configured);if(tpm<=250_000)return 1;if(tpm<=500_000)return Math.min(2,configured);if(tpm<=1_000_000)return Math.min(3,configured);return configured;}
  async team({task,count=3,roles,budgetPerAgent,model}){const n=Math.max(1,Math.min(6,count)),base=roles?.length?roles:['explorer','tester','reviewer','researcher'],roleList=Array.from({length:n},(_,i)=>base[i%base.length]),results=new Array(n),limit=Math.min(n,this.parallelLimit());let next=0;const worker=async()=>{while(true){const i=next++;if(i>=n)return;results[i]=await this.run({role:roleList[i],task,model,budget:budgetPerAgent});}};await Promise.all(Array.from({length:limit},()=>worker()));return results;}
  async spawn(opts){const p=this.run(opts);p.catch(()=>{});return [...this.jobs.values()].at(-1);}

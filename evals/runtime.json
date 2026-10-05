@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "suite": "runtime",
+  "credentialFree": true,
+  "cases": [
+    {
+      "id": "policy-dangerous-deny",
+      "area": "policy",
+      "expectation": "catastrophic shell command is denied"
+    },
+    {
+      "id": "policy-external-ask",
+      "area": "policy",
+      "expectation": "external-impact shell command requires approval"
+    },
+    {
+      "id": "semantic-symbols",
+      "area": "semantic",
+      "expectation": "TypeScript AST returns declared symbol"
+    },
+    {
+      "id": "project-command-discovery",
+      "area": "verification",
+      "expectation": "declared test command is discovered"
+    },
+    {
+      "id": "cache-persistence",
+      "area": "cache",
+      "expectation": "safe result survives cache re-open"
+    },
+    {
+      "id": "process-lifecycle",
+      "area": "processes",
+      "expectation": "owned process exits and output is captured"
+    }
+  ]
+}

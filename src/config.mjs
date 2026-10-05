@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 15,
+  configVersion: 16,
   provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
@@ -41,6 +41,18 @@ const defaults = {
     shell: 'ask',
     mcp: 'ask'
   },
+  shell: {
+    sandbox: 'host',
+    dockerImage: 'node:20-bookworm-slim'
+  },
+  processes: {
+    maxBufferChars: 60000,
+    maxProcesses: 8
+  },
+  cache: {
+    maxEntries: 250,
+    remoteTtlMs: 300000
+  },
   ignore: ['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.turbo', '.cache'],
   mcpServers: {},
   activePlugins: [],
@@ -49,6 +61,7 @@ const defaults = {
     maxParallel: 4,
     defaultBudgetTokens: 120000,
     maxSteps: 8,
+    maxOrchestrationTasks: 6,
     keepWorktrees: false
   },
   claudePlugins: {

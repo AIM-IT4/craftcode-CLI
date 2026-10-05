@@ -9,14 +9,15 @@
   },
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node --test test/basic.test.mjs"
+    "test": "node --test test/basic.test.mjs test/runtime-v011.test.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "zod": "^4.0.0"
+    "zod": "^4.0.0",
+    "typescript": "^5.9.3"
   },
   "license": "MIT",
   "keywords": [

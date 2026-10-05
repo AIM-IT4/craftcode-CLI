@@ -19,11 +19,13 @@ import {AgentManager} from './agents.mjs';
 import {resolveProviderApiKey,saveProviderApiKey,clearProviderApiKey,maskKey,promptSecret,AUTH_FILE} from './auth.mjs';
 import {spawn} from 'node:child_process';
 import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
+import {runRuntimeEvals} from './evals.mjs';
 
 function parseArgs(){
   const a=process.argv.slice(2);let yes=false,cwd=process.cwd(),resume=false,showSplash=true,doctor=false,version=false;
   let action='',actionArg='',actionProvider='',resumeRef='latest';
   if(a[0]==='auth'){action='auth';actionArg=(a[1]||'status').toLowerCase();actionProvider=(a[2]||'').toLowerCase();a.splice(0,3);}
+  else if((a[0]||'').toLowerCase()==='eval'){action='eval';actionArg=(a[1]||'runtime').toLowerCase();a.splice(0,2);}
   else if(['update','upgrade'].includes(a[0])){action='update';a.splice(0,1);}
   else if(['resume','continue'].includes((a[0]||'').toLowerCase())){resume=true;a.splice(0,1);}
   for(let i=0;i<a.length;i++){
@@ -99,6 +101,14 @@ async function vercelInteractiveLogin(cwd,tui){
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
   if(version){console.log('Craft Code 0.10.0');return;}
+  if(action==='eval'){
+    if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
+    const r=await runRuntimeEvals();
+    console.log(`Runtime evals: ${r.passed}/${r.total} passed`);
+    for(const x of r.cases)console.log(`${x.ok?'✓':'✗'} ${x.name}${x.ok?'':': '+x.error}`);
+    if(r.failed)process.exitCode=1;
+    return;
+  }
   if(action==='auth'){await handleAuth(actionArg,actionProvider,cwd);return;}
   if(action==='update'){await runUpdate();return;}
   if(doctor){
@@ -151,7 +161,7 @@ async function main(){
   const startupHookContext=await plugins.hook('session.start',{cwd});if(startupHookContext?.length)session.setPluginContext(startupHookContext);
 
   const save=async()=>store.save({provider:providerId,messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort});
-  const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
+  const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await tools.close?.();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
   const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
   const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
   const setModel=x=>{const caps=client.capabilities?.(x);if(mode==='build'&&caps?.tools===false){tui?.add('notice',`Model ${x} does not advertise tool calling on ${providerConfig.label}.`);return false;}model=x;session.model=x;tui.setMeta({model:x});return true;};
@@ -287,6 +297,7 @@ async function main(){
       if(cmd==='/team'){
         const n=/^\d+$/.test(rest[0]||'')?Math.max(1,Math.min(6,Number(rest.shift()))):Math.min(3,config.agents?.maxParallel||3),task=rest.join(' ');if(!task)return tui.add('notice','Use /team [1-6] <task>.');const parallel=agents.parallelLimit();tui.setNotice(`Launching ${n} agents · up to ${Math.min(n,parallel)} concurrent for current TPM…`,0);const rs=await agents.team({task,count:n});tui.add('assistant',`Parallel agent results\n\n${agents.summary(rs)}`);tui.setNotice(`${n} agents completed`,1800);return;
       }
+      if(cmd==='/orchestrate'){const task=rest.join(' ');if(!task)return tui.add('notice','Use /orchestrate <task>.');tui.setNotice('Planning dependency-aware agent graph…',0);const r=await agents.orchestrate({task,maxWorkers:config.agents?.maxParallel||3});tui.add('assistant',`Orchestrated review\n\n${r.review?.result||r.review?.error||'No reviewer result.'}`);tui.setNotice(`${r.workers.length} worker task(s) reviewed`,1800);return;}
       if(cmd==='/bash'){if(!arg)return tui.add('notice','Use !<command> or /bash <command>.');const r=await tools.execute('run_command',{command:arg},mode);tui.add('assistant','```text\n'+String(r||'')+'\n```');return;}
       if(cmd==='/diff'){const r=await tools.execute('git_diff',{staged:false},'plan');tui.add('assistant',r||'No diff.');return;}
       if(cmd==='/checkpoints'){const cp=await checkpoints.latest();tui.add('assistant',cp?`Latest checkpoint\n${cp.id}\n${cp.createdAt}\n${Object.keys(cp.files||{}).length} direct file snapshot(s)${cp.shellTouched?'\nShell activity also tracked where Git can detect it.':''}`:'No checkpoint available.');return;}
