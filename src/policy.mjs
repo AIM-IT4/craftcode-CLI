@@ -33,8 +33,13 @@ const DESTRUCTIVE_ASK=[
 ];
 
 const OPAQUE_EXECUTION=[
-  {re:/\bnode(?:\.exe)?\s+(?:-e|--eval|--test\b|[^\s]+\.(?:js|mjs|cjs)\b)/i,kind:'opaque',reason:'Node can execute arbitrary project or inline code'},
+  {re:/\bnode(?:\.exe)?\s+(?:-e|--eval|-p|--print|--test\b|[^\s]+\.(?:js|mjs|cjs)\b)/i,kind:'opaque',reason:'Node can execute arbitrary project or inline code'},
   {re:/\b(?:python|python3|py)(?:\.exe)?\s+(?:-c|-m\s+|[^\s]+\.py\b)/i,kind:'opaque',reason:'Python can execute arbitrary project or inline code'},
+  {re:/\b(?:ruby)(?:\.exe)?\s+(?:-e\b|[^\s]+\.rb\b)/i,kind:'opaque',reason:'Ruby can execute arbitrary project or inline code'},
+  {re:/\b(?:perl)(?:\.exe)?\s+(?:-e\b|[^\s]+\.pl\b)/i,kind:'opaque',reason:'Perl can execute arbitrary project or inline code'},
+  {re:/\b(?:php)(?:\.exe)?\s+(?:-r\b|[^\s]+\.php\b)/i,kind:'opaque',reason:'PHP can execute arbitrary project or inline code'},
+  {re:/\bbun(?:\.exe)?\s+(?:-e|--eval)\b/i,kind:'opaque',reason:'Bun can execute arbitrary inline code'},
+  {re:/\bdeno(?:\.exe)?\s+eval\b/i,kind:'opaque',reason:'Deno can execute arbitrary inline code'},
   {re:/\b(?:bash|sh|zsh)\s+-[^\s]*c\b/i,kind:'opaque',reason:'nested shell execution requires explicit approval'},
   {re:/\b(?:powershell|pwsh)(?:\.exe)?\b[^\n;&|]*(?:-Command|-EncodedCommand)\b/i,kind:'opaque',reason:'PowerShell command execution requires explicit approval'},
   {re:/\bcmd(?:\.exe)?\s+\/(?:c|k)\b/i,kind:'opaque',reason:'nested cmd execution requires explicit approval'}
@@ -67,8 +72,8 @@ export class CommandPolicy{
   wrap(command){
     const c=String(command||'');
     if(this.sandbox==='docker'){
-      const mount=`${this.cwd}:/workspace`;
-      return{exe:'docker',args:['run','--rm','--network','none','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','256','--memory','2g','--cpus','2','-v',mount,'-w','/workspace',this.dockerImage,'sh','-lc',c],cwd:this.cwd,sandbox:'docker'};
+      const mount=`${this.cwd}:/workspace:ro`;
+      return{exe:'docker',args:['run','--rm','--network','none','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','256','--memory','2g','--cpus','2','--tmpfs','/tmp:rw,nosuid,nodev,noexec,size=256m','-v',mount,'-w','/workspace',this.dockerImage,'sh','-lc',c],cwd:this.cwd,sandbox:'docker'};
     }
     if(process.platform==='win32')return{exe:'cmd',args:['/d','/s','/c',c],cwd:this.cwd,sandbox:'host'};
     return{exe:'bash',args:['-lc',c],cwd:this.cwd,sandbox:'host'};
