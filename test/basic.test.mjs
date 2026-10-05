@@ -365,7 +365,7 @@ test('agent continues after adaptive step segment instead of silently ending',as
   let calls=0;
   const client={rateLimits:{tpmLimit:200000},stream:async({onText})=>{
     calls++;
-    if(calls<=12)return{message:{role:'assistant',content:null,tool_calls:[{id:'c'+calls,type:'function',function:{name:'read_file',arguments:'{}'}}]},usage:{total_tokens:1},finishReason:'tool_calls'};
+    if(calls<=12)return{message:{role:'assistant',content:null,tool_calls:[{id:'c'+calls,type:'function',function:{name:'read_file',arguments:JSON.stringify({path:`step-${calls}.txt`})}}]},usage:{total_tokens:1},finishReason:'tool_calls'};
     onText?.('completed');
     return{message:{role:'assistant',content:'completed'},usage:{total_tokens:1},finishReason:'stop'};
   }};
