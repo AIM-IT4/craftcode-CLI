@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import {SemanticIndex} from '../src/semantic.mjs';
 import {ToolRegistry} from '../src/tools.mjs';
+import {AgentManager} from '../src/agents.mjs';
 import {CommandPolicy} from '../src/policy.mjs';
 import {ProcessManager} from '../src/processes.mjs';
 import {discoverProjectCommands} from '../src/project_commands.mjs';
@@ -227,4 +228,71 @@ test('ToolRegistry exposes process handles and command discovery with correct re
   for(const name of ['discover_project_commands','process_status','process_logs','process_list'])assert.ok(plan.has(name),name);
   for(const name of ['process_start','process_stop'])assert.ok(build.has(name),name);
   assert.equal(plan.has('process_start'),false);
+});
+
+
+test('AgentManager orchestration honors dependencies and runs a reviewer after workers',async()=>{
+  const manager=new AgentManager({
+    client:{rateLimits:{}},model:'m',cwd:process.cwd(),
+    config:{agents:{maxParallel:3,defaultBudgetTokens:30000}},usage:{},skills:{},plugins:{},mcp:{}
+  });
+  const events=[],seenTasks=[];
+  manager.run=async({role,task})=>{
+    seenTasks.push({role,task});
+    if(role==='planner')return{status:'done',result:JSON.stringify({tasks:[
+      {id:'scan',role:'explorer',task:'scan code',dependsOn:[]},
+      {id:'research',role:'researcher',task:'check docs',dependsOn:[]},
+      {id:'tests',role:'tester',task:'inspect tests',dependsOn:['scan']}
+    ]})};
+    if(role==='reviewer'){events.push('review');return{status:'done',result:'reviewed'};}
+    const id=/scan code/.test(task)?'scan':/check docs/.test(task)?'research':'tests';
+    events.push('start:'+id);
+    if(id==='scan')await new Promise(r=>setTimeout(r,35));
+    if(id==='research')await new Promise(r=>setTimeout(r,10));
+    events.push('end:'+id);
+    return{status:'done',result:'result-'+id,used:10};
+  };
+  const r=await manager.orchestrate({task:'understand the bug',maxWorkers:2,budgetPerAgent:30000});
+  assert.equal(r.workers.length,3);
+  assert.equal(r.review.result,'reviewed');
+  assert.ok(events.indexOf('start:tests')>events.indexOf('end:scan'),events.join(','));
+  assert.equal(events.at(-1),'review');
+  assert.ok(seenTasks.find(x=>x.role==='reviewer').task.includes('result-scan'));
+  assert.ok(seenTasks.find(x=>x.role==='reviewer').task.includes('result-tests'));
+});
+
+test('AgentManager orchestration rejects cyclic dependency graphs before workers run',async()=>{
+  const manager=new AgentManager({
+    client:{rateLimits:{}},model:'m',cwd:process.cwd(),
+    config:{agents:{maxParallel:2}},usage:{},skills:{},plugins:{},mcp:{}
+  });
+  let workerRuns=0;
+  manager.run=async({role})=>{
+    if(role==='planner')return{status:'done',result:JSON.stringify({tasks:[
+      {id:'a',role:'explorer',task:'a',dependsOn:['b']},
+      {id:'b',role:'tester',task:'b',dependsOn:['a']}
+    ]})};
+    workerRuns++;return{status:'done',result:'unexpected'};
+  };
+  await assert.rejects(()=>manager.orchestrate({task:'cycle'}),/cycle|dependency/i);
+  assert.equal(workerRuns,0);
+});
+
+test('AgentManager orchestration rejects writer roles from planner output',async()=>{
+  const manager=new AgentManager({
+    client:{rateLimits:{}},model:'m',cwd:process.cwd(),
+    config:{agents:{maxParallel:2}},usage:{},skills:{},plugins:{},mcp:{}
+  });
+  manager.run=async({role})=>role==='planner'
+    ?{status:'done',result:JSON.stringify({tasks:[{id:'edit',role:'writer',task:'edit files',dependsOn:[]}]})}
+    :{status:'done',result:'unexpected'};
+  await assert.rejects(()=>manager.orchestrate({task:'unsafe plan'}),/writer|read-only/i);
+});
+
+test('ToolRegistry exposes read-only orchestrate_task when delegation is available',()=>{
+  const {skills,plugins,mcp}=deps();
+  const agents={orchestrate:async()=>({}),team:async()=>[],summary:()=>''};
+  const registry=new ToolRegistry({cwd:process.cwd(),config:{permissions:{},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},skills,plugins,mcp,agents});
+  const plan=new Set(registry.definitions('plan').map(x=>x.function.name));
+  assert.ok(plan.has('orchestrate_task'));
 });
