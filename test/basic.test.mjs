@@ -678,3 +678,100 @@ test('writer agents require Git isolation and preserve patches larger than 20KB'
     assert.ok(result.patch.length>20000);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+
+test('provider classifies context-length 400s for automatic session recovery',async()=>{
+  const {OpenAICompatibleClient}=await import('../src/providers/openai-compatible.mjs');
+  const oldFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(JSON.stringify({error:{message:'This request exceeds the maximum context length of 32768 tokens.'}}),{status:400,headers:{'content-type':'application/json'}});
+  try{
+    const c=new OpenAICompatibleClient({id:'custom',label:'Custom',apiKey:'x',baseUrl:'https://example.test/v1'});
+    await assert.rejects(
+      ()=>c.stream({model:'m',messages:[{role:'user',content:'hello'}],tools:[]}),
+      e=>e?.code==='CONTEXT_LENGTH'&&e?.status===400&&/maximum context length/i.test(e.message)
+    );
+  }finally{globalThis.fetch=oldFetch;}
+});
+
+test('provider reduces max_tokens when a known model context window is nearly full',async()=>{
+  const {OpenAICompatibleClient}=await import('../src/providers/openai-compatible.mjs');
+  const oldFetch=globalThis.fetch,enc=new TextEncoder();let requestedBody;
+  globalThis.fetch=async(_url,opts)=>{
+    requestedBody=JSON.parse(opts.body);
+    return new Response(new ReadableStream({start(controller){
+      controller.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'ok'},finish_reason:'stop'}],usage:{prompt_tokens:25000,completion_tokens:1,total_tokens:25001}})+'\n\n'));
+      controller.enqueue(enc.encode('data: [DONE]\n\n'));controller.close();
+    }}),{status:200,headers:{'content-type':'text/event-stream'}});
+  };
+  try{
+    const c=new OpenAICompatibleClient({id:'custom',label:'Custom',apiKey:'x',baseUrl:'https://example.test/v1',maxOutputTokens:8192});
+    c.modelMeta.set('m',{id:'m',context_length:32000});
+    await c.stream({model:'m',messages:[{role:'user',content:'x'.repeat(100000)}],tools:[]});
+    assert.ok(requestedBody.max_tokens<8192,requestedBody.max_tokens);
+    assert.ok(requestedBody.max_tokens>=256,requestedBody.max_tokens);
+  }finally{globalThis.fetch=oldFetch;}
+});
+
+test('long sessions compact proactively against the selected model context window',async()=>{
+  let calls=0;const warnings=[];
+  const client={
+    rateLimits:{},maxOutputTokens:8192,
+    capabilities:()=>({contextWindow:32000}),
+    stream:async({messages,onText})=>{
+      calls++;assert.ok(JSON.stringify(messages).length<85000,'request context should be compacted before stream');
+      onText?.('recovered');return{message:{role:'assistant',content:'recovered'},usage:{total_tokens:1},finishReason:'stop'};
+    }
+  };
+  const session=reliabilitySession({client,events:{onWarn:x=>warnings.push(x)}});
+  const history=[{role:'system',content:'old'}];
+  for(let i=0;i<8;i++){history.push({role:'user',content:`question-${i} `+'q'.repeat(9000)});history.push({role:'assistant',content:`answer-${i} `+'a'.repeat(9000)});}
+  session.restore(history);
+  const r=await session.run('continue this long session');
+  assert.equal(calls,1);assert.equal(r.text,'recovered');
+  assert.ok(warnings.some(x=>/Context nearing model limit/i.test(x)),warnings);
+});
+
+test('context-length provider rejection compacts and retries the same session once',async()=>{
+  let calls=0;const warnings=[];
+  const client={
+    rateLimits:{},maxOutputTokens:8192,capabilities:()=>({contextWindow:null}),
+    stream:async({onText})=>{
+      calls++;
+      if(calls===1){const e=new Error('context too long');e.code='CONTEXT_LENGTH';throw e;}
+      onText?.('ok');return{message:{role:'assistant',content:'ok'},usage:{total_tokens:1},finishReason:'stop'};
+    }
+  };
+  const session=reliabilitySession({client,events:{onWarn:x=>warnings.push(x)}});
+  const history=[{role:'system',content:'old'}];
+  for(let i=0;i<6;i++){history.push({role:'user',content:'q'.repeat(7000)});history.push({role:'assistant',content:'a'.repeat(7000)});}
+  session.restore(history);
+  const r=await session.run('keep going');
+  assert.equal(calls,2);assert.equal(r.text,'ok');
+  assert.ok(warnings.some(x=>/Provider rejected accumulated context/i.test(x)),warnings);
+});
+
+test('resuming repairs interrupted assistant tool calls before the next provider request',async()=>{
+  const client={rateLimits:{},capabilities:()=>({contextWindow:null}),stream:async({messages,onText})=>{
+    const idx=messages.findIndex(m=>m.role==='assistant'&&m.tool_calls?.length);
+    assert.ok(idx>=0);
+    assert.equal(messages[idx+1]?.role,'tool');
+    assert.equal(messages[idx+1]?.tool_call_id,'call-interrupted');
+    onText?.('continued');return{message:{role:'assistant',content:'continued'},usage:{total_tokens:1},finishReason:'stop'};
+  }};
+  const session=reliabilitySession({client});
+  const repaired=session.restore([
+    {role:'system',content:'old'},
+    {role:'user',content:'inspect'},
+    {role:'assistant',content:null,tool_calls:[{id:'call-interrupted',type:'function',function:{name:'read_file',arguments:'{"path":"x"}'}}]}
+  ]);
+  assert.equal(repaired,1);
+  const r=await session.run('continue');
+  assert.equal(r.text,'continued');
+});
+
+test('footer shows model context pressure when the window is known',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),provider:'openrouter',model:'m',mode:'build',usage:fakeUsage(),showSplash:false,contextWindowTokens:32000});tui.schedule=()=>{};
+  tui.setMeta({contextChars:64000,contextWindowTokens:32000});
+  const line=String(tui.usageLine(140,1)).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');
+  assert.match(line,/Context 16\.0k\/32\.0k · 50%/);
+});
