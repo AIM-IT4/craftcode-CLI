@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.3
+
+Released: 2026-10-05.
+
+- Refined the terminal UX with a Claude-inspired activity treatment: `✻ Thinking…`, task-aware verbs such as Searching, Reading, Tracing symbols, Running tests, Reviewing the diff, and compact “Thought for …” completion copy.
+- Added `/style claude|classic|minimal` for terminal glyph/emphasis profiles. The actual font family remains controlled by the terminal emulator.
+- Reworked connector discovery to show authentication UX explicitly: Browser approval, Token / existing login, Local service, or Direct.
+- `/connect vercel` now presents browser/device approval instead of a “needs Vercel CLI” dead end. Craft Code invokes `npx -y vercel@latest` transiently, so no global Vercel CLI installation is required.
+- Kept browser OAuth automatic for MCP connectors that support it and kept truthful token/local labels for connectors that do not.
+- Added regression coverage for activity rendering, style switching, Vercel auth metadata, and connector picker copy.
+
 ## 0.11.2
 
 Released: 2026-10-05.
