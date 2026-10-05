@@ -46,7 +46,8 @@ const defaults = {
     dockerImage: 'node:20-bookworm-slim'
   },
   processes: {
-    maxBufferChars: 60000
+    maxBufferChars: 60000,
+    maxProcesses: 8
   },
   cache: {
     maxEntries: 250,
