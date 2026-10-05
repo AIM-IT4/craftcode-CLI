@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
 
 import {SemanticIndex} from '../src/semantic.mjs';
 import {ToolRegistry} from '../src/tools.mjs';
@@ -365,7 +366,7 @@ test('runtime eval suite is deterministic and credential-free',async()=>{
 });
 
 test('craftcode eval runtime runs before provider authentication',async()=>{
-  const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
+  const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const env={...process.env};
   delete env.CODECRAFT_API_KEY;delete env.OPENROUTER_API_KEY;
   const {stdout}=await execFileP(process.execPath,['src/index.mjs','eval','runtime'],{cwd:root,env});
