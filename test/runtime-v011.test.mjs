@@ -7,6 +7,8 @@ import path from 'node:path';
 import {SemanticIndex} from '../src/semantic.mjs';
 import {ToolRegistry} from '../src/tools.mjs';
 import {CommandPolicy} from '../src/policy.mjs';
+import {ProcessManager} from '../src/processes.mjs';
+import {discoverProjectCommands} from '../src/project_commands.mjs';
 
 const deps=()=>({
   skills:{list:()=>[],load:async()=>({})},
@@ -142,4 +144,87 @@ test('ToolRegistry asks for external-impact commands even when shell permission 
   const r=await registry.execute('run_command',{command:'npm publish'},'build');
   assert.match(String(r),/denied by user/i);
   assert.equal(approvals,1);
+});
+
+
+const waitFor=async(fn,{timeout=3000,interval=25}={})=>{
+  const end=Date.now()+timeout;
+  while(Date.now()<end){const v=await fn();if(v)return v;await new Promise(r=>setTimeout(r,interval));}
+  throw new Error('Timed out waiting for condition');
+};
+
+test('ProcessManager starts, tails and stops an owned background process',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-process-'));
+  const pm=new ProcessManager({cwd:dir,maxBufferChars:4000});
+  try{
+    const p=await pm.start({
+      command:'node fixture server',
+      exe:process.execPath,
+      args:['-e',"console.log('CRAFT_READY');setInterval(()=>{},1000)"],
+      cwd:dir
+    });
+    assert.match(p.id,/^proc-/);
+    await waitFor(()=>pm.logs(p.id).includes('CRAFT_READY'));
+    const live=pm.status(p.id);
+    assert.equal(live.running,true);
+    assert.ok(live.pid>0);
+    const stopped=await pm.stop(p.id);
+    assert.equal(stopped.ok,true);
+    await waitFor(()=>pm.status(p.id).running===false);
+  }finally{await pm.stopAll();await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('ProcessManager bounds retained output',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-process-buffer-'));
+  const pm=new ProcessManager({cwd:dir,maxBufferChars:1000});
+  try{
+    const p=await pm.start({
+      command:'node noisy',
+      exe:process.execPath,
+      args:['-e',"console.log('x'.repeat(5000))"],
+      cwd:dir
+    });
+    await waitFor(()=>pm.status(p.id).running===false);
+    const logs=pm.logs(p.id);
+    assert.ok(logs.length<=1100,`logs retained ${logs.length} chars`);
+    assert.ok(logs.includes('x'));
+  }finally{await pm.stopAll();await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('project command discovery uses declared package scripts instead of inventing commands',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-discovery-'));
+  try{
+    await fs.writeFile(path.join(dir,'package.json'),JSON.stringify({
+      scripts:{test:'node test.js',lint:'eslint .',typecheck:'tsc --noEmit',build:'vite build',dev:'vite'}
+    }));
+    const rows=await discoverProjectCommands(dir);
+    const byKind=Object.fromEntries(rows.map(x=>[x.kind,x]));
+    assert.equal(byKind.test.command,'npm test');
+    assert.equal(byKind.lint.command,'npm run lint');
+    assert.equal(byKind.typecheck.command,'npm run typecheck');
+    assert.equal(byKind.build.command,'npm run build');
+    assert.equal(byKind.dev.command,'npm run dev');
+    assert.ok(rows.every(x=>x.source==='package.json'));
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('project command discovery recognizes standard Go and Cargo projects',async()=>{
+  const go=await fs.mkdtemp(path.join(os.tmpdir(),'craft-go-')),rust=await fs.mkdtemp(path.join(os.tmpdir(),'craft-rust-'));
+  try{
+    await fs.writeFile(path.join(go,'go.mod'),'module example.test/x\n\ngo 1.22\n');
+    await fs.writeFile(path.join(rust,'Cargo.toml'),'[package]\nname="x"\nversion="0.1.0"\n');
+    const goRows=await discoverProjectCommands(go),rustRows=await discoverProjectCommands(rust);
+    assert.ok(goRows.some(x=>x.kind==='test'&&x.command==='go test ./...'));
+    assert.ok(rustRows.some(x=>x.kind==='test'&&x.command==='cargo test'));
+  }finally{await fs.rm(go,{recursive:true,force:true});await fs.rm(rust,{recursive:true,force:true});}
+});
+
+test('ToolRegistry exposes process handles and command discovery with correct read/write boundaries',()=>{
+  const {skills,plugins,mcp}=deps();
+  const registry=new ToolRegistry({cwd:process.cwd(),config:{permissions:{},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},skills,plugins,mcp});
+  const plan=new Set(registry.definitions('plan').map(x=>x.function.name));
+  const build=new Set(registry.definitions('build').map(x=>x.function.name));
+  for(const name of ['discover_project_commands','process_status','process_logs','process_list'])assert.ok(plan.has(name),name);
+  for(const name of ['process_start','process_stop'])assert.ok(build.has(name),name);
+  assert.equal(plan.has('process_start'),false);
 });
