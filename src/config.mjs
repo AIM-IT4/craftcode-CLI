@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 14,
+  configVersion: 15,
   provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
@@ -23,6 +23,11 @@ const defaults = {
   maxTurnSegments: 3,
   maxOutputTokens: 8192,
   autoCompactChars: 300_000,
+  agentRuntime: {
+    parallelTools: true,
+    loopGuardRepeats: 3,
+    autoVerifyEdits: true
+  },
   tokenGuard: {
     enabled: true,
     warnRequestTokens: 500_000,
