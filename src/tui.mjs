@@ -31,6 +31,7 @@ const wrap=(text,w)=>{
 };
 const dayKey=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 const spinner=['◐','◓','◑','◒'];
+const UI_STYLES={claude:{thinking:'✻',header:'✻'},classic:{thinking:'✦',header:'✦'},minimal:{thinking:'·',header:'·'}};
 const glyph=n=>/read|list|search/.test(n)?'⌕':/write|replace/.test(n)?'✎':/command/.test(n)?'›_':/git/.test(n)?'◆':/mcp/.test(n)?'↗':/todo/.test(n)?'☷':'◇';
 const COMMANDS=[
   {cmd:'/mode',desc:'Switch Plan / Build mode'},
@@ -59,6 +60,7 @@ const COMMANDS=[
   {cmd:'/status',desc:'Workspace, Git, model, extensions and usage'},
   {cmd:'/context',desc:'Inspect current context size and composition'},
   {cmd:'/doctor',desc:'Check provider/session/context health'},
+  {cmd:'/style',desc:'Visual style: Claude / Classic / Minimal'},
   {cmd:'/instructions',desc:'Show/reload AGENTS.md and project instructions'},
   {cmd:'/init',desc:'Create a starter AGENTS.md'},
   {cmd:'/settings',desc:'Persistent workspace settings'},
@@ -128,7 +130,7 @@ const fmtPlan=n=>n===Infinity?'Unlimited':fmtTokens(n);
 export class TerminalTui{
   constructor(o){
     Object.assign(this,o);
-    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;
+    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';
     this.transcript=[];this.input='';this.cursor=0;this.history=[];this.hist=-1;
     this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;this.contextWindowTokens=Number(o.contextWindowTokens)||0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
@@ -162,7 +164,7 @@ export class TerminalTui{
   }
   enterSelectionMode(){this.setMouseCapture(false);}
   exitSelectionMode(){/* native selection persists while mouse capture is off */}
-  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
+  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
     if(!v&&this.busy){const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());t.detail='Thought';}}
@@ -191,7 +193,7 @@ export class TerminalTui{
   pickEffort(current=this.effort){return this.openPicker('effort','Agent depth',[{id:'low',label:'Low',meta:'fast · fewer tool loops'},{id:'normal',label:'Normal',meta:'balanced'},{id:'high',label:'High',meta:'deeper verification'}],current);}
   pickPermissions(current=this.permissionPreset){return this.openPicker('permissions','Permissions',[{id:'ask',label:'Ask',meta:'ask before edits · commands · MCP actions'},{id:'edit',label:'Edit',meta:'allow edits · ask commands/MCP'},{id:'auto',label:'Auto',meta:'allow edits · commands · MCP actions'},{id:'locked',label:'Read only',meta:'deny edits · commands · MCP actions'}],current);}
   pickSession(rows=[]){return this.openPicker('session','Resume session',rows.map(x=>({id:x.id,label:x.title||x.id,meta:`${x.turns} turns · ${x.mode} · ${String(x.updatedAt||'').slice(0,16).replace('T',' ')}`})),rows[0]?.id||'');}
-  pickConnector(items=[]){return this.openPicker('connector','Connect / start service',(items||[]).map(x=>({id:x.name,label:x.name,meta:x.connected?'connected':`${x.oauth||x.browserOAuth?'browser OAuth':x.type}${x.requirement?` · needs ${x.requirement}`:''}`})));}
+  pickConnector(items=[]){return this.openPicker('connector','Connect / start service',(items||[]).map(x=>{const auth=x.authMode==='browser'?'Browser approval':x.authMode==='token'?'Token / existing login':x.authMode==='local'?'Local service':x.type;return{id:x.name,label:x.name,meta:x.connected?'connected':`${auth}${x.requirement?` · ${x.requirement}`:''}`};}));}
   openQuickActions(){return this.openPicker('quick','Add to prompt',[{id:'attach',label:'Attach file',meta:'insert @ and search workspace'},{id:'connectors',label:'Connectors',meta:'OAuth / MCP servers'},{id:'agents',label:'Agents',meta:'parallel bounded workers'},{id:'skills',label:'Skills',meta:'reusable workflows'},{id:'plugins',label:'Plugins',meta:'extensions'},{id:'compact',label:'Compact context',meta:'save tokens'},{id:'new',label:'New session',meta:'clear current conversation'}]);}
   openPicker(type,title,items,current){return new Promise(resolve=>{this.modal={type,title,items,index:Math.max(0,items.findIndex(x=>x.id===current)),filter:'',resolve};this.schedule();});}
   openUsage(){this.modal={type:'usage',title:'Usage',resolve:()=>{}};this.schedule();}
@@ -304,8 +306,10 @@ export class TerminalTui{
       }
       if(m.role==='notice'){out.push(`  ${paint('yellow','!')} ${paint('slate',crop(m.text,w-5))}`);continue;}
       if(m.role==='thinking'){
-        const d=m.status==='running'?`${spinner[this.spinnerIndex]} ${m.detail||'Thinking'}…`:`✦ ${m.detail||'Thought'} ${m.durationMs?paint('dim',`${(m.durationMs/1000).toFixed(1)}s`):''}`;
-        out.push(`  ${paint(m.status==='running'?'orange':'slate',d)}`);continue;
+        const mark=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).thinking;
+        if(m.status==='running'){out.push(`  ${paint('orange',mark)} ${C.italic}${C.slate}${m.detail||'Thinking'}…${C.reset}`);continue;}
+        const dur=m.durationMs?`${Math.max(.1,m.durationMs/1000).toFixed(1)}s`:'';
+        out.push(`  ${paint('slate',mark)} ${paint('slate',m.detail||'Thought')}${dur?` ${paint('dim',`for ${dur}`)}`:''}`);continue;
       }
       if(m.role==='toolcard'){
         const sel=i===this.toolSelection,st=m.status==='running'?paint('orange',spinner[this.spinnerIndex]):m.status==='error'?paint('red','×'):paint('green','✓'),dur=m.durationMs?paint('dim',`${Math.max(.1,m.durationMs/1000).toFixed(1)}s`):'';
@@ -320,7 +324,7 @@ export class TerminalTui{
   }
   renderWelcome(){
     const cols=Math.max(70,process.stdout.columns||110),rows=Math.max(24,process.stdout.rows||32),w=Math.min(82,cols-8),left=Math.max(2,Math.floor((cols-w)/2)),pad=s=>' '.repeat(left)+s,u=this.usage.snapshot(),rem=Math.max(0,u.plan-u.total);
-    const title='CRAFT CODE',planText=this.planSource==='observed'?'provider limit not reported':`${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`;const lines=['','',pad(`${paint('orange','✦')} ${paint('bold',title)} ${paint('dim','· provider-agnostic coding agent')}`),'',pad(paint('orange','╭'+'─'.repeat(w-2)+'╮')),pad(paint('orange','│')+` ${paint('bold','Workspace')}  ${crop(this.cwd,w-16)}`+' '.repeat(Math.max(0,w-4-width(`Workspace  ${crop(this.cwd,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Provider')}   ${paint('cyan',crop(this.provider,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Provider   ${crop(this.provider,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Model')}      ${paint('orange2',crop(this.model,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Model      ${crop(this.model,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Plan')}       ${planText}`+' '.repeat(Math.max(0,w-4-width(`Plan       ${planText}`)))+paint('orange','│')),pad(paint('orange','╰'+'─'.repeat(w-2)+'╯')),'',pad(`${paint('dim','Skills')} ${this.startupMeta?.skills||0}   ${paint('dim','Plugins')} ${this.startupMeta?.plugins||0}   ${paint('dim','MCP')} ${this.startupMeta?.mcp||0}`),'',pad(paint('dim','Review file edits and shell approvals. Use trusted repos, skills, plugins and connectors.')),'',pad(`${paint('blue',paint('bold','Enter'))} ${paint('dim','continue')}   ${paint('dim','·')}   ${paint('dim','Q quit')}`)];
+    const title='CRAFT CODE',planText=this.planSource==='observed'?'provider limit not reported':`${fmtPlan(rem)} remaining / ${fmtPlan(u.plan)}`;const brand=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).header;const lines=['','',pad(`${paint('orange',brand)} ${paint('bold',title)} ${paint('dim','· provider-agnostic coding agent')}`),'',pad(paint('orange','╭'+'─'.repeat(w-2)+'╮')),pad(paint('orange','│')+` ${paint('bold','Workspace')}  ${crop(this.cwd,w-16)}`+' '.repeat(Math.max(0,w-4-width(`Workspace  ${crop(this.cwd,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Provider')}   ${paint('cyan',crop(this.provider,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Provider   ${crop(this.provider,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Model')}      ${paint('orange2',crop(this.model,w-16))}`+' '.repeat(Math.max(0,w-4-width(`Model      ${crop(this.model,w-16)}`)))+paint('orange','│')),pad(paint('orange','│')+` ${paint('bold','Plan')}       ${planText}`+' '.repeat(Math.max(0,w-4-width(`Plan       ${planText}`)))+paint('orange','│')),pad(paint('orange','╰'+'─'.repeat(w-2)+'╯')),'',pad(`${paint('dim','Skills')} ${this.startupMeta?.skills||0}   ${paint('dim','Plugins')} ${this.startupMeta?.plugins||0}   ${paint('dim','MCP')} ${this.startupMeta?.mcp||0}`),'',pad(paint('dim','Review file edits and shell approvals. Use trusted repos, skills, plugins and connectors.')),'',pad(`${paint('blue',paint('bold','Enter'))} ${paint('dim','continue')}   ${paint('dim','·')}   ${paint('dim','Q quit')}`)];
     while(lines.length<rows)lines.push('');this.paintFrame(lines.slice(0,rows),cols);
   }
   overlay(w){
@@ -407,7 +411,7 @@ export class TerminalTui{
   renderChat(){
     const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=Math.max(68,cols-3);
     this.regions=[];
-    const workspace=crop(path.basename(this.cwd),32),header=`  ${paint('orange','✦')} ${paint('bold','Craft Code')} ${paint('dim','·')} ${paint('slate',workspace)}`;
+    const workspace=crop(path.basename(this.cwd),32),brand=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).header,header=`  ${paint('orange',brand)} ${paint('bold','Craft Code')} ${paint('dim','·')} ${paint('slate',workspace)}`;
     const right=this.notice?paint('yellow',crop(this.notice,42)):paint('dim',crop(this.provider||'provider',20));
     const headSpace=Math.max(1,w-width(header)-width(right));
     const top=fit(header+' '.repeat(headSpace)+right,w);

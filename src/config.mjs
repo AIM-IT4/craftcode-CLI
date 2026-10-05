@@ -72,26 +72,31 @@ const defaults = {
     autoResume: false,
     autosave: true
   },
+  ui: {
+    style: 'claude'
+  },
   instructions: {
     files: ['AGENTS.md','CLAUDE.md','.github/copilot-instructions.md'],
     maxChars: 12000
   },
   connectorCatalog: {
-    supabase: { type: 'http', url: 'https://mcp.supabase.com/mcp', oauth: true },
-    vercel: { type: 'cli', command: 'vercel', requirement: 'Vercel CLI device login', authHint: 'Craft Code uses Vercel CLI authentication because Vercel MCP OAuth only accepts approved clients.' },
+    supabase: { type: 'http', url: 'https://mcp.supabase.com/mcp', oauth: true, authMode: 'browser' },
+    vercel: { type: 'cli', command: 'npx', browserOAuth: true, authMode: 'browser', requirement: 'browser approval opens automatically', authHint: 'Craft Code launches Vercel OAuth device approval through npx -y vercel@latest; no global Vercel CLI install is required.' },
     github: {
       type: 'http',
       url: 'https://api.githubcopilot.com/mcp/',
       tokenEnv: 'GITHUB_TOKEN',
       tokenCommand: ['gh','auth','token'],
       tokenRequired: true,
+      authMode: 'token',
       authHint: 'use an existing GitHub credential: run gh auth login once (recommended) or set GITHUB_TOKEN, then retry /connect github.'
     },
     playwright: {
       type: 'stdio',
       command: 'npx',
       args: ['-y','@playwright/mcp@latest'],
-      requirement: 'Node.js; Chromium downloads automatically on first use'
+      authMode: 'local',
+      requirement: 'Chromium downloads automatically on first use'
     }
   }
 };

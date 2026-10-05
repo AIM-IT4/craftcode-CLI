@@ -28,6 +28,7 @@ CLI authentication:
 - `/mode` — Plan / Build picker
 - `/effort` — Low / Normal / High
 - `/permissions` — permission preset picker
+- `/style claude|classic|minimal` — switch terminal glyph/emphasis profile (font family is controlled by the terminal emulator)
 - `/agents`
 - `/agent spawn <role> <task>`
 - `/team [count] <task>`
@@ -54,7 +55,7 @@ CLI authentication:
 - `/plugins`
 - `/plugin marketplace add <owner/repo>`
 - `/plugin install <name@marketplace>`
-- `/connect`
+- `/connect` — connector picker with Browser approval / Token / Local auth labels
 - `/mcp`
 
 ## Git / shell
