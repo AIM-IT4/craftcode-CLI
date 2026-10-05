@@ -438,3 +438,53 @@ test('ToolCache persistent files are private on POSIX',async t=>{
     assert.equal(mode&0o077,0);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
+
+
+test('host policy gates additional interpreter eval forms',()=>{
+  const host=new CommandPolicy({cwd:process.cwd(),sandbox:'host'});
+  for(const command of [
+    "node -p \"require('node:fs').writeFileSync('x','y')\"",
+    "ruby -e \"File.write('x','y')\"",
+    "perl -e \"open(F,'>x');print F 'y'\"",
+    "php -r \"file_put_contents('x','y');\"",
+    "bun -e \"Bun.write('x','y')\"",
+    "deno eval \"Deno.writeTextFileSync('x','y')\""
+  ]){
+    const r=host.evaluate(command);
+    assert.equal(r.decision,'ask',command);
+    assert.equal(r.kind,'opaque',command);
+  }
+});
+
+test('Docker sandbox mounts workspace read-only when project code is auto-approved',()=>{
+  const cwd=path.resolve(process.cwd());
+  const docker=new CommandPolicy({cwd,sandbox:'docker'});
+  const r=docker.wrap('npm test');
+  const i=r.args.indexOf('-v');
+  assert.ok(i>=0);
+  assert.ok(String(r.args[i+1]).endsWith(':/workspace:ro'),r.args[i+1]);
+  assert.ok(r.args.includes('--tmpfs'));
+  assert.ok(r.args.some(x=>String(x).startsWith('/tmp:')));
+});
+
+test('project command discovery cache stays memory-only to avoid persisting script bodies',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-command-cache-work-'));
+  const cacheDir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-command-cache-store-'));
+  const {skills,plugins,mcp}=deps();
+  try{
+    const marker='PRIVATE_SCRIPT_MARKER_7f21';
+    await fs.writeFile(path.join(dir,'package.json'),JSON.stringify({scripts:{test:`echo ${marker}`}}));
+    const cache=new ToolCache({cwd:dir,dir:cacheDir});
+    const registry=new ToolRegistry({
+      cwd:dir,config:{permissions:{},ignore:[],tokenGuard:{},shell:{sandbox:'host'}},
+      skills,plugins,mcp,cache
+    });
+    const a=await registry.execute('discover_project_commands',{},'plan');
+    const b=await registry.execute('discover_project_commands',{},'plan');
+    assert.deepEqual(a,b);
+    assert.ok((await registry.execute('cache_stats',{},'plan')).hits>=1);
+    const names=await fs.readdir(cacheDir).catch(()=>[]);
+    let persisted='';for(const name of names)persisted+=await fs.readFile(path.join(cacheDir,name),'utf8').catch(()=> '');
+    assert.doesNotMatch(persisted,new RegExp(marker));
+  }finally{await fs.rm(dir,{recursive:true,force:true});await fs.rm(cacheDir,{recursive:true,force:true});}
+});
