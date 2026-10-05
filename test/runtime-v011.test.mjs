@@ -89,17 +89,19 @@ test('ToolRegistry exposes semantic_code as a read-only parallel-safe tool',()=>
 });
 
 
-test('command policy allows local verification but asks for external-impact commands',()=>{
+test('command policy allows inert local commands but asks for project-code and external-impact execution on host',()=>{
   const policy=new CommandPolicy({cwd:process.cwd()});
   assert.equal(policy.evaluate('git status').decision,'allow');
-  assert.equal(policy.evaluate('npm test').decision,'allow');
-  assert.equal(policy.evaluate('node --test test/basic.test.mjs').decision,'allow');
-  for(const command of ['git push origin main','npm publish','curl https://example.com','vercel deploy']){
+  for(const command of ['npm test','node --test test/basic.test.mjs','git push origin main','npm publish','curl https://example.com','vercel deploy']){
     const r=policy.evaluate(command);
     assert.equal(r.decision,'ask',command);
     assert.ok(r.reason);
   }
   assert.equal(policy.evaluate('git status && npm publish').decision,'ask');
+
+  const sandboxed=new CommandPolicy({cwd:process.cwd(),sandbox:'docker'});
+  assert.equal(sandboxed.evaluate('npm test').decision,'allow');
+  assert.equal(sandboxed.evaluate('git push origin main').decision,'ask');
 });
 
 test('command policy denies catastrophic host commands even when shell permission is otherwise automatic',()=>{
