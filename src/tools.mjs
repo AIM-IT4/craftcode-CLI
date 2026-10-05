@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';import path from 'node:path';import{execFile}f
 const schema=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
 function safePath(cwd,p='.') {const full=path.resolve(cwd,p),root=path.resolve(cwd);if(full!==root&&!full.startsWith(root+path.sep))throw new Error('Path escapes workspace');return full;}
 function clip(s,n){s=String(s??'');return s.length>n?s.slice(0,n)+`\n… clipped ${s.length-n} chars`:s;}
-const PARALLEL_SAFE=new Set(['list_files','read_file','read_many_files','search_files','repo_map','semantic_code','git_status','git_diff','git_log','discover_project_commands','process_status','process_logs','process_list','list_skills','list_plugins','list_mcp_servers','fetch_url','inspect_repo_url','read_repo_file']);
+const PARALLEL_SAFE=new Set(['list_files','read_file','read_many_files','search_files','repo_map','semantic_code','git_status','git_diff','git_log','discover_project_commands','process_status','process_logs','process_list','cache_stats','list_skills','list_plugins','list_mcp_servers','fetch_url','inspect_repo_url','read_repo_file']);
 const MUTATING=new Set(['replace_in_file','write_file','delete_file','move_file','make_directory']);
 const CODE_EXT=new Set(['.js','.mjs','.cjs','.ts','.tsx','.jsx','.py','.go','.rs','.java','.kt','.kts','.c','.cc','.cpp','.h','.hpp','.cs','.rb','.php','.swift','.scala','.sql','.vue','.svelte']);
 const SYMBOL_PATTERNS=[
