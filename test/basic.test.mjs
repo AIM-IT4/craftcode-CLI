@@ -526,7 +526,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.11\.2/);
+  assert.match(stdout,/Craft Code 0\.11\.3/);
   assert.match(stdout,/Provider:/);
 });
 
