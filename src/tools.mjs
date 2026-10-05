@@ -13,7 +13,7 @@ const SYMBOL_PATTERNS=[
 ];
 async function fallbackSearch(cwd,{query,path:rel='.',glob='',ignore=[]},maxChars=30000){
   const root=safePath(cwd,rel),out=[];let re;
-  try{re=new RegExp(query,'i');}catch{re=new RegExp(String(query).replace(/[.*+?^$()|[\]\\{}]/g,'\\const schema=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});function safePath(cwd,p='.') {const full=path.resolve(cwd,p),root=path.resolve(cwd);if(full!==root&&!full.startsWith(root+path.sep))throw new Error('Path escapes workspace');return full;}function clip(s,n){s=String(s??'');return s.length>n?s.slice(0,n)+`\n… clipped ${s.length-n} chars`:s;}'),'i');}
+  try{re=new RegExp(query,'i');}catch{re=new RegExp(String(query).replace(/[.*+?^$()|[\]\\{}]/g,'\\$&'),'i');}
   const ignored=new Set(ignore||[]);
   const globExt=String(glob||'').match(/\*\.([A-Za-z0-9]+)$/)?.[1]?.toLowerCase();
   const walk=async d=>{
