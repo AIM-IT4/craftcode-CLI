@@ -48,6 +48,7 @@ const COMMANDS=[
   {cmd:'/agents',desc:'Show parallel subagents'},
   {cmd:'/agent',desc:'Spawn a bounded subagent'},
   {cmd:'/team',desc:'Run multiple agents in parallel'},
+  {cmd:'/orchestrate',desc:'Plan dependencies, run workers, then review'},
   {cmd:'/plugin',desc:'Claude plugin marketplace/install/update'},
   {cmd:'/diff',desc:'Show Git diff'},
   {cmd:'/undo',desc:'Restore latest Craft checkpoint'},
