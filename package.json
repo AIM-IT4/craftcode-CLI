@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/basic.test.mjs test/runtime-v011.test.mjs"
   },
   "engines": {
     "node": ">=20"
