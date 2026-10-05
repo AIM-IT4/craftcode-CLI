@@ -147,7 +147,7 @@ async function main(){
     onThinking:x=>tui?.setActivity(thinkingWords[(x?.step||0)%thinkingWords.length]),
     onText:t=>tui?.stream(t),
     onUsage:u=>tui?.setMeta({requestUsage:u}),
-    onContext:n=>tui?.setMeta({contextChars:n}),
+    onContext:(n,stats)=>tui?.setMeta({contextChars:n,contextWindowTokens:stats?.contextWindow||0}),
     onWarn:s=>tui?.add('notice',s),
     onToolStart:x=>{tui?.setActivity(activityForTool(x));return tui?.toolStart(x);},
     onToolEnd:x=>{tui?.toolEnd(x);tui?.setActivity('Reviewing results');},
@@ -164,12 +164,12 @@ async function main(){
   const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await tools.close?.();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
   const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
   const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
-  const setModel=x=>{const caps=client.capabilities?.(x);if(mode==='build'&&caps?.tools===false){tui?.add('notice',`Model ${x} does not advertise tool calling on ${providerConfig.label}.`);return false;}model=x;session.model=x;tui.setMeta({model:x});return true;};
+  const setModel=x=>{const caps=client.capabilities?.(x);if(mode==='build'&&caps?.tools===false){tui?.add('notice',`Model ${x} does not advertise tool calling on ${providerConfig.label}.`);return false;}model=x;session.model=x;session.emitContext?.();tui.setMeta({model:x,contextWindowTokens:session.contextWindow?.()||0});return true;};
   const setProvider=async id=>{
     const p=providers.get(id),credential=await resolveProviderApiKey(id,p);if(p.auth!==false&&!credential.key)throw new Error(`${p.label} is not authenticated. Run: craftcode auth login ${id}`);
     const next=providers.create(id,{apiKey:credential.key,maxOutputTokens:config.maxOutputTokens,onRateLimit:client.onRateLimit}),ms=await next.models(),nextModel=pickDefaultModel(ms,id===providerId?model:'');
     if(!nextModel)throw new Error(`No tool-capable model available from ${p.label}.`);
-    providerId=id;providerConfig=p;client=next;availableModels=ms;model=nextModel;session.client=client;session.model=model;agents.client=client;agents.model=pickSubagentModel(ms,model);
+    providerId=id;providerConfig=p;client=next;availableModels=ms;model=nextModel;session.client=client;session.model=model;session.emitContext?.();agents.client=client;agents.model=pickSubagentModel(ms,model);
     planResolved=resolveUsagePlan(config,client,providerId);usage.planTokens=planResolved.tokens;config.provider=id;config.model=model;await updateProjectConfig(cwd,{provider:id,model});
     tui.setMeta({provider:id,model,planTokens:planResolved.tokens,planSource:planResolved.source});tui.setNotice(`Provider · ${p.label} · ${model}`,2200);return true;
   };
@@ -180,14 +180,14 @@ async function main(){
     const s=await store.load(ref||'latest');if(!s){tui.add('notice','No matching saved session found.');return false;}
     const savedProvider=s.provider||'codecraft';if(savedProvider!==providerId)await setProvider(savedProvider);
     if(s.model){const exists=availableModels.some(m=>(m.id||m.name)===s.model);if(exists)setModel(s.model);else tui.add('notice',`Saved model ${s.model} is not available from ${providerConfig.label}; using ${model}.`);}
-    session.setMode(s.mode||'build');session.setEffort(s.effort||effort);session.restore(s.messages||[]);
-    mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({provider:providerId,model,mode,effort,contextChars:session.contextChars()});tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
+    session.setMode(s.mode||'build');session.setEffort(s.effort||effort);const repaired=session.restore(s.messages||[]);
+    mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({provider:providerId,model,mode,effort,contextChars:session.contextChars(),contextWindowTokens:session.contextWindow?.()||0});if(repaired)tui.add('notice',`Recovered ${repaired} interrupted session message ${repaired===1?'entry':'entries'} while resuming.`);tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
   };
   const currentStatus=async()=>{
     let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}
     const u=usage.snapshot(),ctx=session.contextStats(),connected=mcp.list().filter(x=>x.connected).map(x=>x.name),title=store.currentTitle||'Untitled session',rate=client.rateProfile();
     const providerSummary=providerStatusSummary({providerLabel:providerConfig.label,providerId,model:session.model,usage:u,planSource:planResolved.source});
-    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n${providerSummary}\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)} tokens · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
+    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n${providerSummary}\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)}${ctx.contextWindow?` / ${fmtTokens(ctx.contextWindow)} (${ctx.percent}%)`:''} · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
   };
 
   const runOne=async(raw,{implementing=false}={})=>{
@@ -306,7 +306,7 @@ async function main(){
         if(!await tui.askApproval('undo',`Restore latest checkpoint ${cp.id}?`))return tui.setNotice('Undo cancelled.');
         const r=await checkpoints.undoLatest();tui.add(r.ok?'assistant':'notice',r.message);if(r.ok)tui.setCheckpoint('');return;
       }
-      if(cmd==='/compact')return tui.setNotice(`Context compacted · ${session.compact()} messages retained`);
+      if(cmd==='/compact'){const before=session.contextStats().estimatedTokens,count=session.compact(),after=session.contextStats().estimatedTokens;return tui.setNotice(`Context compacted · ${fmtTokens(before)} → ${fmtTokens(after)} · ${count} messages retained`,2600);}
       if(cmd==='/clear'){session.clear();tui.replaceTranscript([]);tui.setTodos([]);return tui.setNotice('Conversation cleared.');}
       if(cmd==='/sessions'){
         const sub=(rest[0]||'').toLowerCase();
@@ -325,7 +325,8 @@ async function main(){
       }
       if(cmd==='/new'){await save();store.fresh();session.clear();tui.replaceTranscript([]);tui.setTodos([]);tui.setCheckpoint('');return tui.setNotice('Fresh session.');}
       if(cmd==='/status'){tui.add('assistant',await currentStatus());return;}
-      if(cmd==='/context'){const x=session.contextStats();tui.add('assistant',`# Context\n\n- Estimated tokens: **${fmtTokens(x.estimatedTokens)}**\n- Messages: ${x.messages}\n- System/instructions: ~${fmtTokens(Math.ceil(x.systemChars/4))}\n- User: ~${fmtTokens(Math.ceil(x.userChars/4))}\n- Assistant: ~${fmtTokens(Math.ceil(x.assistantChars/4))}\n- Tool results: ~${fmtTokens(Math.ceil(x.toolChars/4))}\n\nUse /compact when old conversation history is no longer useful.`);return;}
+      if(cmd==='/context'){const x=session.contextStats(),defs=tools.definitions(mode),budget=session.contextBudget(defs);tui.add('assistant',`# Context\n\n- Estimated messages: **${fmtTokens(x.estimatedTokens)}**${x.contextWindow?` / **${fmtTokens(x.contextWindow)}** model window (${x.percent}%)`:''}\n- Messages: ${x.messages}\n- System/instructions: ~${fmtTokens(Math.ceil(x.systemChars/4))}\n- User: ~${fmtTokens(Math.ceil(x.userChars/4))}\n- Assistant: ~${fmtTokens(Math.ceil(x.assistantChars/4))}\n- Tool results: ~${fmtTokens(Math.ceil(x.toolChars/4))}${budget?`\n- Tool schemas: ~${fmtTokens(budget.toolTokens)}\n- Auto-compact trigger: ~${fmtTokens(budget.triggerTokens)} message tokens\n- Reserved output: ~${fmtTokens(budget.outputReserve)}`:''}\n\nCraft Code compacts proactively near the selected model window and retries automatically if a provider rejects accumulated context.`);return;}
+      if(cmd==='/doctor'){const repaired=session.repairContext(),x=session.contextStats(),budget=session.contextBudget(tools.definitions(mode)),health=x.contextWindow?(x.percent>=88?'high pressure':x.percent>=70?'watch':'healthy'):'unknown window';tui.add('assistant',`# Session doctor\n\n- Provider: **${providerConfig.label}** (${providerId})\n- Model: **${session.model}**\n- Context health: **${health}**${x.contextWindow?` · ${fmtTokens(x.estimatedTokens)}/${fmtTokens(x.contextWindow)} (${x.percent}%)`:''}\n- Message protocol: **${repaired?`repaired ${repaired} entr${repaired===1?'y':'ies'}`:'healthy'}**${budget?`\n- Auto-compact at: ~${fmtTokens(budget.triggerTokens)} message tokens\n- Recovery target: ~${fmtTokens(budget.targetTokens)} message tokens`:''}\n\nContext-length and interrupted tool-sequence errors are repaired/compacted once and retried automatically before Craft Code surfaces the provider error.`);return;}
       if(cmd==='/instructions'){
         if((rest[0]||'').toLowerCase()==='reload'){projectInstructions=await loadProjectInstructions(cwd,config);session.setProjectInstructions(projectInstructions);agents.projectInstructions=projectInstructions;return tui.setNotice(`Reloaded ${projectInstructions.length} instruction file(s).`);}
         tui.add('assistant',projectInstructions.length?projectInstructions.map(x=>`## ${x.file}\n\n${x.text}`).join('\n\n'):'No AGENTS.md / CLAUDE.md project instructions found. Use /init to create AGENTS.md.');return;
@@ -355,7 +356,7 @@ async function main(){
   };
 
   tui=new TerminalTui({
-    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,
+    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,
     onSubmit:runOne,onCommand:command,onCancel:()=>session.cancel(),onExit:exit,fileRefs:refs,showSplash,
     onModelsRequest:()=>client.models(),onModelPick:setModel,onModePick:setMode,onEffortPick:setEffort,onPermissionPick:setPermissions,onPermissionCycle:cyclePermissions,onPermissionDecision:persistApproval,onQuickAction:quickAction,
     startupMeta:{skills:skills.list().length,plugins:plugins.list().length,mcp:mcp.list().length,planName:client.planHint()?.name||'',rpm:client.rateLimits.rpmLimit||0}
