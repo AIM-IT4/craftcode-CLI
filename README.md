@@ -55,14 +55,16 @@ Most coding agents hide at least one important thing: context growth, permission
 |---|---|
 | Terminal UX | Full-screen interactive TUI with streaming, command palette, inline tool activity and clickable controls |
 | Sessions | Search, resume, rename, fork, export and optional per-workspace auto-resume |
-| Agents | Parallel bounded subagents; writer agents use isolated Git worktrees |
+| Agents | Parallel bounded subagents, dependency-aware orchestration and isolated Git worktree writers |
 | Context | `@file` references, compaction, project instructions and bounded reads |
 | Skills | Lazy `SKILL.md` loading with `.claude/skills` and `.agents/skills` compatibility |
 | Plugins | Claude-style marketplaces, commands, skills and opt-in lifecycle hooks |
 | Connectors | MCP over stdio/HTTP with OAuth support where available |
-| Safety | Ask/Edit/Auto/Read-only permission presets, checkpoints and undo |
+| Safety | Ask/Edit/Auto/Read-only presets, command policy, optional Docker shell sandboxing, checkpoints and undo |
 | Providers | CodeCraft, OpenRouter, and configurable OpenAI-compatible endpoints behind one agent runtime |
-| Tokens | Per-request/session/day accounting, lazy schemas, provider rate metadata when available, and bounded retry handling |
+| Tokens | Per-request/session/day accounting, lazy schemas, persistent safe-tool cache, provider rate metadata when available, and bounded retry handling |
+| Code intelligence | TypeScript-AST symbols, definitions and references plus compact repository mapping |
+| Runtime | Long-running process handles, project command discovery and credential-free deterministic evals |
 
 ## What you get
 
@@ -113,7 +115,8 @@ CodeCraft remains the default for legacy installations and existing configs/sess
 - Interactive `/model`, `/mode`, `/effort`, `/permissions` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
 - File attachment/autocomplete with `@path/to/file`.
 - Git checkpoints and `/undo`.
-- Shell shortcut syntax such as `!git status` through the normal permission layer.
+- Shell shortcut syntax such as `!git status` through command policy and the normal permission layer.
+- Long-running dev servers and watchers use owned process handles instead of foreground command timeouts.
 
 ### Persistent sessions
 
@@ -141,9 +144,28 @@ craftcode -c /path/to/project
 /agent spawn explorer "Find the auth flow"
 /agent spawn reviewer "Review the checkout diff"
 /team 3 "Investigate this regression from different angles"
+/orchestrate "Trace this checkout regression and propose the safest fix"
 ```
 
-Read-only workers can run concurrently with individual token ceilings. Writer agents are isolated in Git worktrees so concurrent edits do not collide with your main working tree.
+Read-only workers can run concurrently with individual token ceilings. `/orchestrate` adds a planner, validated dependency graph and final reviewer so dependent investigations execute in the right order. Planner-generated worker roles are read-only. Writer agents remain a separate explicit path and are isolated in Git worktrees so concurrent edits do not collide with your main working tree.
+
+### Semantic code intelligence and verification discovery
+
+For JavaScript and TypeScript work, Craft Code can inspect AST-backed symbols, definitions and references instead of relying only on text search. It can also discover existing project-native test, lint, typecheck, build and dev commands before choosing verification commands.
+
+### Shell policy, process handles and cache
+
+Shell commands pass through a policy layer before the ordinary permission preset. Catastrophic host commands are denied, external-impact operations such as publish/deploy/push remain approval-gated, and an opt-in Docker mode can execute shell commands with networking disabled. Safe tool results can be persisted with metadata-based freshness checks; workspace mutations invalidate the local cache.
+
+Use long-running process handles for dev servers, watchers and similar tasks. Craft Code owns those processes, keeps bounded logs, and stops them when the CLI exits.
+
+Credential-free runtime checks are available without provider authentication:
+
+```bash
+craftcode eval runtime
+```
+
+The suite exercises command policy, TypeScript semantic lookup, project-command discovery, cache persistence and process lifecycle.
 
 ### Skills and Claude-style plugins
 
