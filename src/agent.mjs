@@ -1,3 +1,5 @@
+import {compactConversation,estimateTokens,repairConversation} from './context.mjs';
+
 function systemPrompt({cwd,mode,effort='high',skills,plugins,mcp,pluginContext=[],projectInstructions=[]}){const skillList=skills.list().slice(0,40).map(s=>`${s.name}: ${s.description}`).join('\n'),pluginList=plugins.list().map(p=>`${p.name}${p.active?' (active)':''}: ${p.description||''}`).join('\n'),mcpList=mcp.list().map(s=>`${s.name} (${s.type})`).join(', ');return`You are Craft Code, a precise general coding and research agent working in ${cwd}.
 Mode: ${mode}. Agent depth: ${effort}. In PLAN mode do not modify files or execute shell commands. In BUILD mode make focused changes and verify them. At low depth, minimize exploration and tool loops. At normal depth, balance speed and verification. At high depth, verify assumptions and important changes carefully without becoming verbose.
 For non-trivial work, maintain a short progress list with update_todo. Mark exactly one item in_progress at a time where practical, and complete items as work finishes.
@@ -6,21 +8,28 @@ Skills are lazy. Use list_skills/load_skill only when relevant. Available skill 
 Plugins are lazy: ${pluginList||'(none)'}. Connectors are lazy: ${mcpList||'(none)'}. Never load every MCP tool schema; inspect only the connector needed for the task. Vercel is a native CLI connector: after /connect vercel, use vercel_api for REST reads/writes or run_command with the Vercel CLI for first-class commands. Do not attempt OAuth directly against mcp.vercel.com from Craft Code because Vercel allowlists approved MCP clients.
 ${Array.isArray(projectInstructions)&&projectInstructions.length?`\nProject instructions (authoritative for this workspace):\n${projectInstructions.map(x=>`--- ${x.file} ---\n${x.text}`).join('\n')}`:''}${Array.isArray(pluginContext)&&pluginContext.length?`\nActive plugin lifecycle context:\n${pluginContext.join('\n')}`:''}\nWhen finished, summarize files changed, verification performed, and unresolved risks. Never claim a command/test ran unless its tool result confirms it.`;}
 const estChars=m=>m.reduce((n,x)=>n+JSON.stringify(x).length,0);
-function trimToolOutputs(messages,keepTail=6,maxChars=3500){
-  return messages.map((m,i)=>{if(m.role!=='tool'||i>=messages.length-keepTail||String(m.content||'').length<=maxChars)return m;const s=String(m.content||'');return{...m,content:`${s.slice(0,2600)}\n… older tool output compacted …\n${s.slice(-600)}`};});
-}
-function prune(messages){
-  const base=trimToolOutputs(messages);if(base.length<=14)return base;
-  const u=[];for(let i=1;i<base.length;i++)if(base[i].role==='user')u.push(i);const cut=u.length>4?u[u.length-4]:1;if(cut<=1)return base;
-  const older=base.slice(1,cut).filter(m=>m.role==='user'||m.role==='assistant').slice(-8).map(m=>`${m.role}: ${String(m.content||'').slice(0,700)}`).join('\n');
-  return[base[0],{role:'system',content:`Earlier conversation was locally compacted to save tokens. Salient excerpts:\n${older}`},...base.slice(cut)];
-}const detail=a=>a?.path||a?.server||a?.command?.slice(0,90)||a?.name||a?.query||'';
+const fmtContextTokens=n=>n>=1000?`${(n/1000).toFixed(n>=10000?0:1)}k`:String(Math.max(0,Math.round(n)));
+const detail=a=>a?.path||a?.server||a?.command?.slice(0,90)||a?.name||a?.query||'';
 export class AgentSession{
  constructor({client,model,cwd,mode='build',effort='high',config,usage,skills,plugins,mcp,tools,checkpoints=null,events={},turnTokenBudget=0,projectInstructions=[]}){Object.assign(this,{client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,turnTokenBudget,projectInstructions});this.messages=[];this.pluginContext=[];this.lastUsage=null;this.controller=null;this.running=false;}
  setPluginContext(x=[]){this.pluginContext=(x||[]).filter(Boolean).slice(-12);this.rebuildSystem();} setProjectInstructions(x=[]){this.projectInstructions=x||[];this.rebuildSystem();}
- compactLimit(){const configured=this.config.autoCompactChars||500_000,tpm=this.client.rateLimits?.tpmLimit;if(!tpm)return configured;return Math.min(configured,Math.max(100_000,Math.floor(tpm*0.6)));}
+ contextWindow(){return Number(this.client.capabilities?.(this.model)?.contextWindow)||0;}
+ contextBudget(tools=[]){const window=this.contextWindow();if(!window)return null;const toolTokens=estimateTokens(tools||[]),configuredOutput=Number(this.client.maxOutputTokens||this.config.maxOutputTokens||8192),outputReserve=Math.min(configuredOutput,Math.max(1024,Math.floor(window*.25))),safety=Math.max(1024,Math.floor(window*.05)),maxMessageTokens=Math.max(1024,window-toolTokens-outputReserve-safety);return{window,toolTokens,outputReserve,safety,triggerTokens:Math.max(1024,Math.floor(maxMessageTokens*.82)),targetTokens:Math.max(768,Math.floor(maxMessageTokens*.62))};}
+ compactLimit(tools=[]){let limit=this.config.autoCompactChars||500_000,tpm=this.client.rateLimits?.tpmLimit;if(tpm)limit=Math.min(limit,Math.max(100_000,Math.floor(tpm*.6)));const budget=this.contextBudget(tools);if(budget)limit=Math.min(limit,budget.triggerTokens*4);return limit;}
+ compactTarget(tools=[],aggressive=false){const budget=this.contextBudget(tools);if(budget)return Math.max(8000,Math.floor(budget.targetTokens*4*(aggressive?.72:1)));return Math.max(8000,Math.floor(this.contextChars()*(aggressive?.5:.68)));}
  stepLimit(){const base=this.effort==='low'?Math.min(8,this.config.maxAgentSteps||20):this.effort==='normal'?Math.min(14,this.config.maxAgentSteps||20):(this.config.maxAgentSteps||20),tpm=this.client.rateLimits?.tpmLimit;if(!tpm)return base;const cap=tpm<=250_000?(this.effort==='low'?6:this.effort==='normal'?9:12):tpm<=500_000?(this.effort==='low'?7:this.effort==='normal'?11:16):tpm<=1_000_000?(this.effort==='low'?8:this.effort==='normal'?13:18):base;return Math.min(base,cap);}
- rebuildSystem(){const s={role:'system',content:systemPrompt(this)};if(this.messages[0]?.role==='system')this.messages[0]=s;else this.messages.unshift(s);}clear(){this.messages=[];this.rebuildSystem();this.events.onContext?.(this.contextChars());}compact(){this.messages=prune(this.messages);this.events.onContext?.(this.contextChars());return this.messages.length;}setMode(m){this.mode=m;this.rebuildSystem();this.events.onContext?.(this.contextChars());}setEffort(e){this.effort=e;this.rebuildSystem();this.events.onContext?.(this.contextChars());}contextChars(){return estChars(this.messages)} contextStats(){const system=this.messages.filter(x=>x.role==='system').reduce((n,x)=>n+JSON.stringify(x).length,0),tool=this.messages.filter(x=>x.role==='tool').reduce((n,x)=>n+JSON.stringify(x).length,0),user=this.messages.filter(x=>x.role==='user').reduce((n,x)=>n+JSON.stringify(x).length,0),assistant=this.messages.filter(x=>x.role==='assistant').reduce((n,x)=>n+JSON.stringify(x).length,0);return{chars:this.contextChars(),estimatedTokens:Math.ceil(this.contextChars()/4),systemChars:system,toolChars:tool,userChars:user,assistantChars:assistant,messages:this.messages.length};}restore(m=[]){this.messages=Array.isArray(m)&&m.length?m:[];this.rebuildSystem();this.events.onContext?.(this.contextChars());}cancel(){if(this.controller&&!this.controller.signal.aborted){this.controller.abort();return true;}return false;}
+ emitContext(){this.events.onContext?.(this.contextChars(),this.contextStats());}
+ rebuildSystem(){const next={role:'system',content:systemPrompt(this)};if(this.messages[0]?.role==='system')this.messages[0]=next;else this.messages.unshift(next);}
+ clear(){this.messages=[];this.rebuildSystem();this.emitContext();}
+ compact({targetChars=0,aggressive=false}={}){const before=this.contextChars(),target=targetChars||Math.max(8000,Math.floor(before*.68)),result=compactConversation(this.messages,{targetChars:target,aggressive});this.messages=result.messages;this.lastCompaction={...result,targetChars:target};this.emitContext();return this.messages.length;}
+ repairContext(){const result=repairConversation(this.messages);if(result.repaired||result.dropped){this.messages=result.messages;this.lastRepair={repaired:result.repaired,dropped:result.dropped};this.emitContext();}return result.repaired+result.dropped;}
+ autoCompact(tools=[],reason='auto',aggressive=false){const before=this.contextChars(),limit=this.compactLimit(tools);if(!aggressive&&before<=limit)return false;this.compact({targetChars:this.compactTarget(tools,aggressive),aggressive});const after=this.contextChars();if(after>=before)return false;const b=fmtContextTokens(Math.ceil(before/4)),a=fmtContextTokens(Math.ceil(after/4));this.events.onWarn?.(reason==='provider'?`Provider rejected accumulated context · compacted ${b} → ${a} tokens · retrying automatically.`:`Context nearing model limit · compacted ${b} → ${a} tokens · continuing.`);return true;}
+ setMode(m){this.mode=m;this.rebuildSystem();this.emitContext();}
+ setEffort(e){this.effort=e;this.rebuildSystem();this.emitContext();}
+ contextChars(){return estChars(this.messages)}
+ contextStats(){const system=this.messages.filter(x=>x.role==='system').reduce((n,x)=>n+JSON.stringify(x).length,0),tool=this.messages.filter(x=>x.role==='tool').reduce((n,x)=>n+JSON.stringify(x).length,0),user=this.messages.filter(x=>x.role==='user').reduce((n,x)=>n+JSON.stringify(x).length,0),assistant=this.messages.filter(x=>x.role==='assistant').reduce((n,x)=>n+JSON.stringify(x).length,0),estimatedTokens=Math.ceil(this.contextChars()/4),contextWindow=this.contextWindow();return{chars:this.contextChars(),estimatedTokens,contextWindow,percent:contextWindow?Math.min(999,Math.round(estimatedTokens/contextWindow*100)):null,systemChars:system,toolChars:tool,userChars:user,assistantChars:assistant,messages:this.messages.length};}
+ restore(m=[]){const repaired=repairConversation(Array.isArray(m)&&m.length?m:[]);this.messages=repaired.messages;this.lastRestoreRepair=repaired.repaired+repaired.dropped;this.rebuildSystem();this.emitContext();return this.lastRestoreRepair;}
+ cancel(){if(this.controller&&!this.controller.signal.aborted){this.controller.abort();return true;}return false;}
 
  async run(userText){
   if(this.running)throw new Error('Agent is already running');
@@ -29,8 +38,8 @@ export class AgentSession{
   const signal=this.controller.signal;
   if(!this.messages.length)this.rebuildSystem();
   this.messages.push({role:'user',content:userText});
-  this.events.onContext?.(this.contextChars());
-  if(estChars(this.messages)>this.compactLimit())this.compact();
+  this.emitContext();
+  if(estChars(this.messages)>this.compactLimit())this.autoCompact([],'auto',false);
 
   let finalText='',totalThisTurn=0;
   let mutated=false,verified=false,verificationPrompted=false,stalled=false;
@@ -70,14 +79,37 @@ export class AgentSession{
       if(segment>0)this.events.onWarn?.(`Long turn · continuing automatically (${segments}/${segmentLimit})…`);
 
       for(let step=0;step<stepLimit;step++){
-        if(estChars(this.messages)>this.compactLimit())this.compact();
+        const toolDefs=this.tools.definitions(this.mode);
+        this.autoCompact(toolDefs,'auto',false);
+        this.repairContext();
         if(signal.aborted)throw new DOMException('Aborted','AbortError');
         this.events.onThinking?.({step:segment*stepLimit+step});
 
-        const res=await this.client.stream({
-          model:this.model,messages:this.messages,tools:this.tools.definitions(this.mode),signal,
-          onText:t=>{finalText+=t;this.events.onText?.(t);}
-        });
+        let res,contextRetried=false,sequenceRetried=false;
+        while(true){
+          try{
+            res=await this.client.stream({
+              model:this.model,messages:this.messages,tools:toolDefs,signal,
+              onText:t=>{finalText+=t;this.events.onText?.(t);}
+            });
+            break;
+          }catch(e){
+            if(e?.code==='MESSAGE_SEQUENCE'&&!sequenceRetried){
+              sequenceRetried=true;const repaired=this.repairContext();
+              if(!repaired)throw e;
+              this.events.onWarn?.(`Recovered ${repaired} interrupted tool-message ${repaired===1?'entry':'entries'} · retrying automatically.`);
+              continue;
+            }
+            if(e?.code==='CONTEXT_LENGTH'&&!contextRetried){
+              contextRetried=true;const before=this.contextChars();
+              let changed=this.autoCompact(toolDefs,'provider',true);
+              if(!changed){this.compact({targetChars:Math.max(8000,Math.floor(before*.48)),aggressive:true});changed=this.contextChars()<before;}
+              if(!changed)throw new Error('The selected model rejected this session context and Craft Code could not shrink it safely. The latest prompt or project instructions may exceed the model window; use /context, shorten the input, or switch to a larger-context model.');
+              continue;
+            }
+            throw e;
+          }
+        }
         this.lastUsage=res.usage;
         if(res.usage){
           totalThisTurn+=res.usage.total_tokens||0;
@@ -85,21 +117,21 @@ export class AgentSession{
           this.events.onUsage?.(res.usage);
         }
         this.messages.push(res.message);
-        this.events.onContext?.(this.contextChars());
+        this.emitContext();
 
         const calls=res.message.tool_calls||[];
         if(!calls.length){
           if(res.finishReason==='length'){
             this.events.onWarn?.('Output limit reached · continuing automatically…');
             this.messages.push({role:'user',content:'[Craft Code continuation] Continue exactly where the previous response stopped. Do not repeat completed work.'});
-            this.events.onContext?.(this.contextChars());
+            this.emitContext();
             continue outer;
           }
           if(this.mode==='build'&&mutated&&autoVerify&&!verificationPrompted&&!verified){
             verificationPrompted=true;
             this.events.onWarn?.('Edits made · requesting focused verification before finalizing…');
             this.messages.push({role:'user',content:'[Craft Code verification gate] You modified the workspace. Before finalizing, inspect the diff and run the most focused relevant test/lint/typecheck/build command available. If no verification can run, inspect the diff and explain the limitation briefly.'});
-            this.events.onContext?.(this.contextChars());
+            this.emitContext();
             continue outer;
           }
           completed=true;
@@ -118,7 +150,7 @@ export class AgentSession{
         else for(const x of prepared)results.push(await runTool(x.call,x.args));
 
         for(const x of results)this.messages.push({role:'tool',tool_call_id:x.call.id,content:x.content});
-        this.events.onContext?.(this.contextChars());
+        this.emitContext();
 
         if(repeatBatchCount>=loopLimit){
           stalled=true;
@@ -127,7 +159,7 @@ export class AgentSession{
           break outer;
         }else if(repeatBatchCount===2){
           this.messages.push({role:'user',content:'[Craft Code loop guard] You just repeated the same tool batch. Reassess before calling it again; prefer a different query, file range, or strategy if the result did not advance the task.'});
-          this.events.onContext?.(this.contextChars());
+          this.emitContext();
         }
 
         if(this.turnTokenBudget&&totalThisTurn>=this.turnTokenBudget){
@@ -145,6 +177,7 @@ export class AgentSession{
     return{text:finalText,usage:this.lastUsage,totalThisTurn,cancelled:false,completed:completed&&!budgetReached&&!stalled,stalled,verified};
   }catch(e){
     if(e?.name==='AbortError'){
+      this.repairContext();
       this.messages.push({role:'assistant',content:'[Turn cancelled by user]'});
       this.events.onCancelled?.();
       return{text:finalText,usage:this.lastUsage,totalThisTurn,cancelled:true,completed:false,stalled:false,verified};
