@@ -1,6 +1,6 @@
 {
   "name": "craftcode-codecraft",
-  "version": "0.14.9",
+  "version": "0.14.10",
   "description": "Provider-agnostic terminal coding and research agent with CodeCraft, OpenRouter and OpenAI-compatible providers, a full-screen TUI, subagents, skills, plugins and MCP.",
   "type": "module",
   "bin": {
