@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.14.0
+
+Released: 2026-10-06.
+
+- Added a Context Efficiency Engine that keeps the richer local session while sending a lean evidence view to the provider.
+- Large tool results are evidence-compressed before entering future model context; command failures, assertions, summaries and tail output are preferentially retained.
+- Identical tool evidence is content-hashed and replaced with a compact unchanged-evidence reference instead of paying for the same payload repeatedly.
+- Older tool results are compressed again at request time while the most recent tool evidence remains intact.
+- Long-session compaction now pins recent user requirements, changed-file paths, failed/passed verification commands and browser-verification evidence.
+- Auto-selected skills now strip YAML metadata, HTML comments and redundant whitespace before entering the prompt, while preserving the instruction body.
+- Added adaptive per-request output ceilings for tiny, normal and deep tasks. Build tasks keep a conservative floor so tool-call arguments are not starved.
+- Default final responses are instructed to stay compact unless the user explicitly asks for detail.
+- Added `apply_patch`, a permission-gated unified-diff edit tool that reduces output tokens by avoiding whole-file rewrites and duplicated old/new blocks.
+- Subagent narrative results are bounded before they are injected into supervisor context.
+- `/context` now reports effective lean-request size, avoided context tokens, duplicate/compressed tool evidence and the current output budget.
+- Fixed verification accounting so a failed test/lint/typecheck/build command does not mark the turn as successfully verified.
+
 ## 0.13.0
 
 Released: 2026-10-06.
