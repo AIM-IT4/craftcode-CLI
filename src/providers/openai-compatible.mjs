@@ -77,10 +77,10 @@ export class OpenAICompatibleClient{
     const mimeType=img.headers.get('content-type')||'image/png';if(!/^image\//i.test(mimeType))throw new Error(this.label+' image URL returned unexpected content type '+mimeType+'.');
     return{bytes:Buffer.from(await img.arrayBuffer()),mimeType,model:chosen,revisedPrompt:item?.revised_prompt||'',url};
   }
-  async stream({model,messages,tools,onText,signal}){
+  async stream({model,messages,tools,onText,signal,maxOutputTokens=null}){
     const inputTokens=this.estimateInputTokens(messages,tools),contextWindow=this.capabilities(model)?.contextWindow||0,safety=contextWindow?Math.max(512,Math.floor(contextWindow*.02)):0;
     if(contextWindow&&inputTokens>=contextWindow-safety)throw new ProviderRequestError(this.label,0,`Estimated input ${inputTokens} tokens exceeds the ${contextWindow}-token model context window.`,{code:'CONTEXT_LENGTH',contextWindow,inputTokens});
-    const outputTokens=contextWindow?Math.max(256,Math.min(this.maxOutputTokens,contextWindow-inputTokens-safety)):this.maxOutputTokens;
+    const requested=Math.max(256,Math.min(this.maxOutputTokens,Number(maxOutputTokens)||this.maxOutputTokens)),outputTokens=contextWindow?Math.max(256,Math.min(requested,contextWindow-inputTokens-safety)):requested;
     const body={model,messages,stream:true,max_tokens:outputTokens};if(tools?.length){body.tools=tools;body.tool_choice='auto';}
     const estimated=inputTokens+Math.min(outputTokens,4096),release=await this._reserveRateBudget(estimated,signal);let r,last429='';
     try{
