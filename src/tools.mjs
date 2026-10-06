@@ -81,7 +81,7 @@ export class ToolRegistry{
    return value;
  }
  async _invalidateCache(){await this.cache.invalidateWorkspace();}
- async _authorizeCommand(command){if((this.config.permissions?.shell||'ask')==='deny')return{ok:false,message:'Denied by user'};const verdict=this.policy.evaluate(command);if(verdict.decision==='deny')return{ok:false,message:`Denied by policy (${verdict.kind}): ${verdict.reason}`};if(verdict.decision==='ask'){if(!await this.askFn(`SHELL POLICY ${verdict.kind}: ${verdict.reason}\n${command}`))return{ok:false,message:'Denied by user'};}else if(!await this._permit('shell',command))return{ok:false,message:'Denied by user'};return{ok:true,verdict,run:this.policy.wrap(command)};}
+ async _authorizeCommand(command){if((this.config.permissions?.shell||'ask')==='deny')return{ok:false,message:'Denied by user'};const verdict=this.policy.evaluate(command);if(verdict.decision==='deny')return{ok:false,message:`Denied by policy (${verdict.kind}): ${verdict.reason}`};if(verdict.decision==='ask'){if(!await this.askFn(`SHELL POLICY ${verdict.kind}: ${verdict.reason}\n${command}`,{persistent:false,reason:'policy'}))return{ok:false,message:'Denied by user'};}else if(!await this._permit('shell',command))return{ok:false,message:'Denied by user'};return{ok:true,verdict,run:this.policy.wrap(command)};}
  isParallelSafe(name){return PARALLEL_SAFE.has(name);}
  isMutating(name){return MUTATING.has(name);}
  isVerification(name,args={}){if(name!=='run_command')return false;return /(?:^|\s)(?:test|tests|lint|typecheck|check|build|pytest|vitest|jest|cargo\s+test|go\s+test|mvn\s+test|gradle\s+test)(?:\s|$)/i.test(String(args.command||''));}

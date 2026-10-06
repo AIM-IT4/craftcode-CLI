@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.11
+
+Released: 2026-10-06.
+
+- Fixed `A = always allow` and `D = always deny` so normal write, shell, and MCP decisions persist to the workspace `.craftcli/config.json` instead of only mutating the current process.
+- Durable permission decisions are saved before the pending operation resumes, preventing repeated prompts caused by persistence races.
+- Security-policy approvals for repository-controlled code, opaque interpreters, destructive commands, pushes, publishes, installs, and deploys are explicitly one-shot; those prompts no longer advertise an ineffective permanent bypass.
+- One-off action confirmations such as applying subagent patches, deleting sessions, undoing checkpoints, enabling hooks, or authorizing isolated agent shells also no longer expose misleading `always` controls.
+- Added regression coverage for permission reloads, async persistence, and policy-gated prompt UX.
 ## 0.14.10
 
 Released: 2026-10-06.

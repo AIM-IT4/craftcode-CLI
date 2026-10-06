@@ -92,6 +92,22 @@ test('CodeCraft RPM plan hint maps Starter to 30M',async()=>{
   try{const c=new CodeCraftClient({apiKey:'x',baseUrl:'https://x/v1'});await c.models();assert.deepEqual(c.planHint(),{name:'Starter',tokens:30_000_000,rpm:120});assert.equal(resolvePlanTokens({planTokens:'auto'},c.planHint()).tokens,30_000_000);}finally{globalThis.fetch=oldFetch;}
 });
 
+test('allow always waits for durable permission persistence before resolving',async()=>{
+  let persisted=0,resolved;
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,onPermissionDecision:async(kind,decision)=>{assert.equal(kind,'write');assert.equal(decision,'allow');await new Promise(r=>setTimeout(r,5));persisted++;}});tui.schedule=()=>{};tui.running=true;
+  const pending=tui.askApproval('write','src/a.js');pending.then(v=>{resolved=v;});
+  const key=tui.handleKey('A');assert.equal(resolved,undefined);await key;assert.equal(persisted,1);assert.equal(await pending,true);
+});
+
+test('policy-gated approvals do not advertise or accept always bypass',async()=>{
+  let persisted=0;
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,onPermissionDecision:()=>{persisted++;}});tui.schedule=()=>{};tui.running=true;
+  const pending=tui.askApproval('shell policy project-code','npm test',{persistent:false,reason:'policy'});
+  const overlay=tui.overlay(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\\/]*[@-~]/g,'');
+  assert.match(overlay,/no always bypass/i);assert.doesNotMatch(overlay,/always deny/i);
+  tui.handleKey('A');assert.equal(persisted,0);assert.ok(tui.approval);tui.handleKey('Y');assert.equal(await pending,true);
+});
+
 test('permission pill and picker are exposed',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',permissionPreset:'ask',usage:fakeUsage(),showSplash:false,mouseCapture:true,startupMeta:{mcp:0}});tui.schedule=()=>{};tui.paintFrame=()=>{};tui.renderChat();
   assert.ok(tui.regions.some(r=>r.action==='permissions'));
@@ -645,7 +661,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.14\.10/);
+  assert.match(stdout,/Craft Code 0\.14\.11/);
   assert.match(stdout,/Provider:/);
 });
 

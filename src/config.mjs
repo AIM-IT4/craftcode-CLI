@@ -175,6 +175,15 @@ export async function writeStarterConfig() {
   await fs.writeFile(GLOBAL_CONFIG, JSON.stringify(defaults, null, 2) + '\n');
   return GLOBAL_CONFIG;
 }
+export async function persistPermissionDecision(cwd,config,kind,decision){
+  if(!['write','shell','mcp'].includes(kind))throw new Error(`Unsupported permission kind: ${kind}`);
+  if(!['allow','ask','deny'].includes(decision))throw new Error(`Unsupported permission decision: ${decision}`);
+  config.permissions=config.permissions||{};
+  config.permissions[kind]=decision;
+  await updateProjectConfig(cwd,{permissions:{[kind]:decision}});
+  return decision;
+}
+
 export async function updateGlobalConfig(patch={}) {
   await fs.mkdir(APP_DIR,{recursive:true});
   const current=await readJson(GLOBAL_CONFIG);

@@ -28,7 +28,7 @@ CLI authentication:
 
 - `/mode` — Plan / Build picker
 - `/effort` — Low / Normal / High
-- `/permissions` — permission preset picker
+- `/permissions` — permission preset picker. `A`/`D` on normal permission prompts persist that category for the workspace; policy-gated shell commands remain one-shot approvals.
 - `/style claude|classic|minimal` — switch terminal glyph/emphasis profile (font family is controlled by the terminal emulator)
 - `/plushie auto|on|off` — control the animated Spark terminal mascot above the composer
 - `/agents`

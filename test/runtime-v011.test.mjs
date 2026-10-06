@@ -15,6 +15,7 @@ import {ProcessManager} from '../src/processes.mjs';
 import {discoverProjectCommands} from '../src/project_commands.mjs';
 import {ToolCache} from '../src/cache.mjs';
 import {runRuntimeEvals} from '../src/evals.mjs';
+import {loadConfig,persistPermissionDecision} from '../src/config.mjs';
 
 const execFileP=promisify(execFile);
 
@@ -22,6 +23,18 @@ const deps=()=>({
   skills:{list:()=>[],load:async()=>({})},
   plugins:{list:()=>[],toolEntries:()=>[],activate:()=>{}},
   mcp:{list:()=>[],tools:async()=>[],call:async()=>({})}
+});
+
+test('allow-always permission decisions persist in workspace config and survive reload',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-permission-persist-'));
+  try{
+    const config=await loadConfig(dir);config.permissions={...config.permissions,write:'ask',shell:'ask',mcp:'ask'};
+    await persistPermissionDecision(dir,config,'write','allow');
+    assert.equal(config.permissions.write,'allow');
+    const reloaded=await loadConfig(dir);assert.equal(reloaded.permissions.write,'allow');
+    const raw=JSON.parse(await fs.readFile(path.join(dir,'.craftcli','config.json'),'utf8'));
+    assert.equal(raw.permissions.write,'allow');
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 
 test('semantic index returns AST-backed symbols for TypeScript and TSX',async()=>{
