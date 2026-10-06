@@ -155,6 +155,36 @@ test('connector catalog exposes OAuth and browser-login connectors without loadi
   const m=new McpManager({}, {supabase:{type:'http',url:'https://mcp.supabase.com/mcp',oauth:true},github:{type:'stdio',command:'docker',browserOAuth:true}});const xs=m.list();assert.equal(xs.length,2);assert.equal(xs.find(x=>x.name==='supabase').oauth,true);assert.equal(xs.find(x=>x.name==='github').browserOAuth,true);
 });
 
+test('OAuth persistence ignores malformed and cross-issuer client state',async()=>{
+  const {PersistentOAuthProvider,sanitizeOAuthData}=await import('../src/oauth.mjs');
+  const cleaned=sanitizeOAuthData({
+    client:{issuer:'https://issuer-a'},
+    clients:{'https://issuer-a':{issuer:'https://issuer-a'},good:{client_id:'good-client'}},
+    lastTokens:{refresh_token:'stale'},
+    tokens:{bad:{refresh_token:'stale'},good:{access_token:'token'}}
+  });
+  assert.equal(cleaned.client,undefined);
+  assert.equal(cleaned.clients?.['https://issuer-a'],undefined);
+  assert.equal(cleaned.clients?.good.client_id,'good-client');
+  assert.equal(cleaned.lastTokens,undefined);
+  assert.equal(cleaned.tokens?.bad,undefined);
+
+  const p=new PersistentOAuthProvider('oauth-regression-test');
+  p.callbackUrl='http://127.0.0.1:54321/oauth/callback';
+  p.data={
+    client:{client_id:'legacy-client'},
+    clients:{'https://issuer-a':{client_id:'issuer-a-client'}},
+    lastTokens:{access_token:'latest-token'},
+    tokens:{'https://issuer-a':{access_token:'issuer-a-token'}}
+  };
+  assert.equal(await p.clientInformation({issuer:'https://issuer-b'}),undefined);
+  assert.equal((await p.clientInformation({issuer:'https://issuer-a'})).client_id,'issuer-a-client');
+  assert.equal(await p.tokens({issuer:'https://issuer-b'}),undefined);
+  assert.equal((await p.tokens()).access_token,'latest-token');
+  assert.equal(p.clientMetadata.application_type,'native');
+  assert.equal(p.clientMetadata.redirect_uris[0],p.callbackUrl);
+});
+
 test('connector picker describes auth UX instead of CLI prerequisites',async()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
   const pending=tui.pickConnector([{name:'vercel',type:'cli',authMode:'browser',requirement:'browser approval opens automatically',connected:false},{name:'github',type:'http',authMode:'token',connected:false}]);
@@ -661,7 +691,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.14\.13/);
+  assert.match(stdout,/Craft Code 0\.14\.14/);
   assert.match(stdout,/Provider:/);
 });
 

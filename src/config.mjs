@@ -123,7 +123,7 @@ const defaults = {
     maxChars: 12000
   },
   connectorCatalog: {
-    supabase: { type: 'http', url: 'https://mcp.supabase.com/mcp', oauth: true, authMode: 'browser' },
+    supabase: { type: 'http', url: 'https://mcp.supabase.com/mcp', oauth: true, authMode: 'browser', requirement: 'browser approval via Supabase dynamic OAuth registration', authHint: 'Supabase hosted MCP uses browser OAuth with dynamic client registration; Craft Code does not require a PAT or manually entered client ID.' },
     vercel: { type: 'cli', command: 'npx', browserOAuth: true, authMode: 'browser', requirement: 'browser approval opens automatically', authHint: 'Craft Code launches Vercel OAuth device approval through npx -y vercel@latest; no global Vercel CLI install is required.' },
     github: {
       type: 'http',

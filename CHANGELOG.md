@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.14
+
+Released: 2026-10-06.
+
+- Fixed `/connect supabase` browser OAuth failures that could surface as missing `client_id` / `redirect_uri` validation errors.
+- Persisted MCP OAuth client registrations and tokens are now validated before reuse; malformed partial records are discarded automatically.
+- OAuth client credentials and token sets are no longer reused across authorization-server issuers, matching the current MCP SDK credential-isolation contract.
+- Loopback browser callbacks are explicitly registered as a native OAuth application.
+- Added scoped OAuth credential invalidation so stale client registrations or tokens can recover without manual file deletion.
+- Supabase connector copy now documents that hosted Supabase MCP uses browser OAuth with dynamic client registration; a PAT or manually entered client ID is not required for the normal interactive flow.
+- Added regression coverage for malformed OAuth state, issuer isolation, and callback metadata.
+
 ## 0.14.13
 
 Released: 2026-10-06.
