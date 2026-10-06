@@ -20,6 +20,8 @@ import {resolveProviderApiKey,saveProviderApiKey,clearProviderApiKey,maskKey,pro
 import {spawn} from 'node:child_process';
 import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
 import {runRuntimeEvals} from './evals.mjs';
+import {FlightRecorder,summarizeFlightEvent} from './flight_recorder.mjs';
+import {formatProof} from './proof.mjs';
 
 function parseArgs(){
   const a=process.argv.slice(2);let yes=false,cwd=process.cwd(),resume=false,showSplash=true,doctor=false,version=false;
@@ -132,12 +134,13 @@ async function main(){
   const mcp=new McpManager(config.mcpServers,config.connectorCatalog||{});
   mcp.setPluginConfigs(await plugins.mcpServers());
   const store=await new SessionStore(cwd).init();
+  const recorder=config.flightRecorder?.enabled===false?null:await new FlightRecorder(cwd,{maxRuns:config.flightRecorder?.maxRuns||120}).init();
   const refs=new FileReferenceIndex(cwd,{ignore:config.ignore||[]});
   const checkpoints=await new CheckpointManager(cwd).init();
   try{await refs.scan();}catch{}
   let projectInstructions=await loadProjectInstructions(cwd,config);
 
-  let mode=config.defaultMode||'build',effort=config.defaultEffort||'high',permissionPreset=permissionPresetOf(config.permissions),session,tui,stopping=false,processing=false;
+  let mode=config.defaultMode||'build',effort=config.defaultEffort||'high',permissionPreset=permissionPresetOf(config.permissions),session,tui,stopping=false,processing=false,lastRunId='';
   const askFn=async q=>{const m=String(q).match(/^([^:]+):\s*(.*)$/s);return tui.askApproval((m?.[1]||'action').toLowerCase(),m?.[2]||q);};
   const agents=new AgentManager({client,model:pickSubagentModel(availableModels,model),cwd,config,usage,skills,plugins,mcp,projectInstructions,events:{onChange:x=>tui?.setAgents(x)}});
   const tools=new ToolRegistry({cwd,config,skills,plugins,mcp,agents,checkpoints,yes,onNotice:()=>{},onTodo:x=>tui?.setTodos(x),askFn});
@@ -153,6 +156,7 @@ async function main(){
     onToolEnd:x=>{tui?.toolEnd(x);tui?.setActivity('Reviewing results');},
     onCancelled:()=>tui?.add('notice','Turn cancelled. Completed edits remain available through /undo.'),
     onCheckpoint:cp=>{tui?.setCheckpoint(cp.id);tui?.setNotice('Checkpoint ready · Undo available',1800);},
+    onTrace:x=>recorder?.record(x.type,x),
     onTurnEnd:()=>tui?.setBusy(false)
   };
   client.onRateLimit=({retryMs,tpmLimit,tpmRemaining,proactive})=>{const secs=Math.max(1,Math.ceil(retryMs/1000));tui?.setActivity(proactive?'Pacing requests':'Rate limit');tui?.setNotice(`${proactive?'TPM pacing':'TPM limit'} · ${proactive?'waiting':'retrying'} ${secs}s${tpmLimit?` · ${fmtTokens(tpmRemaining||0)}/${fmtTokens(tpmLimit)} remaining`:''}`,Math.min(Math.max(retryMs,1800),30000));};
@@ -160,7 +164,7 @@ async function main(){
   session.clear();
   const startupHookContext=await plugins.hook('session.start',{cwd});if(startupHookContext?.length)session.setPluginContext(startupHookContext);
 
-  const save=async()=>store.save({provider:providerId,messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort});
+  const save=async()=>store.save({provider:providerId,messages:session.messages,transcript:tui.getTranscript(),model:session.model,mode:session.mode,effort:session.effort,proof:session.lastProof,lastRunId});
   const exit=async()=>{if(stopping)return;stopping=true;try{await save();}catch{}try{await tools.close?.();}catch{}try{await mcp.closeAll();}catch{}tui.stop();process.exit(0);};
   const setMode=x=>{mode=x;session.setMode(x);tui.setMeta({mode:x});};
   const setEffort=x=>{effort=x;session.setEffort(x);tui.setMeta({effort:x});};
@@ -181,7 +185,7 @@ async function main(){
     const savedProvider=s.provider||'codecraft';if(savedProvider!==providerId)await setProvider(savedProvider);
     if(s.model){const exists=availableModels.some(m=>(m.id||m.name)===s.model);if(exists)setModel(s.model);else tui.add('notice',`Saved model ${s.model} is not available from ${providerConfig.label}; using ${model}.`);}
     session.setMode(s.mode||'build');session.setEffort(s.effort||effort);const repaired=session.restore(s.messages||[]);
-    mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({provider:providerId,model,mode,effort,contextChars:session.contextChars(),contextWindowTokens:session.contextWindow?.()||0});if(repaired)tui.add('notice',`Recovered ${repaired} interrupted session message ${repaired===1?'entry':'entries'} while resuming.`);tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
+    session.lastProof=s.proof||null;lastRunId=s.lastRunId||'';mode=session.mode;effort=session.effort;tui.replaceTranscript(s.transcript||[]);tui.setMeta({provider:providerId,model,mode,effort,contextChars:session.contextChars(),contextWindowTokens:session.contextWindow?.()||0});if(repaired)tui.add('notice',`Recovered ${repaired} interrupted session message ${repaired===1?'entry':'entries'} while resuming.`);tui.setNotice(`Resumed · ${s.title||s.id}`,2200);return true;
   };
   const currentStatus=async()=>{
     let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}
@@ -191,12 +195,16 @@ async function main(){
   };
 
   const runOne=async(raw,{implementing=false}={})=>{
-    if(processing)return;processing=true;
+    if(processing)return;processing=true;let runId='';
     try{
       const ex=await refs.expand(raw);
       if(ex.refs.length)tui.setNotice(`Attached ${ex.refs.map(x=>'@'+x).join(', ')}`,1600);
       for(const w of ex.warnings)tui.add('notice',w);
-      const r=await session.run(ex.prompt);await save();
+      if(recorder)runId=await recorder.begin({sessionId:store.currentId,provider:providerId,model:session.model,goal:String(raw).replace(/\s+/g,' ').trim().slice(0,180),messageStart:session.messages.length});
+      const r=await session.run(ex.prompt);
+      if(runId){await recorder.finish({status:r.cancelled?'cancelled':r.completed?'completed':r.stalled?'stalled':'incomplete',proof:r.proof||null,messageCount:session.messages.length,contextEpoch:session.traceEpoch});lastRunId=runId;}
+      await save();
+      if(r.proof?.applicable)tui.setNotice(`Proof ${r.proof.score}/100 · ${r.proof.label}`,2200);
       if(!r.cancelled&&mode==='plan'&&!implementing){
         const a=await tui.askPlanApproval();
         if(a==='implement'){
@@ -205,7 +213,7 @@ async function main(){
         }
         if(a==='stay')tui.setNotice('Staying in Plan mode.');
       }
-    }catch(e){tui.add('notice',e.message||String(e));tui.setBusy(false);}finally{processing=false;}
+    }catch(e){if(runId&&recorder?.active?.id===runId){await recorder.finish({status:'error',error:String(e.message||e),messageCount:session.messages.length,contextEpoch:session.traceEpoch});lastRunId=runId;}tui.add('notice',e.message||String(e));tui.setBusy(false);}finally{processing=false;}
     while(!processing&&tui.hasQueue()){const n=tui.dequeue();if(!n)break;tui.add('user',n);await runOne(n);}
   };
 
