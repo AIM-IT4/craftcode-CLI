@@ -1,4 +1,6 @@
 import {compactConversation,estimateTokens,repairConversation} from './context.mjs';
+import {ProofTracker} from './proof.mjs';
+import {FlightRecorder} from './flight_recorder.mjs';
 
 function systemPrompt({cwd,mode,effort='high',skills,plugins,mcp,pluginContext=[],projectInstructions=[]}){const skillList=skills.list().slice(0,40).map(s=>`${s.name}: ${s.description}`).join('\n'),pluginList=plugins.list().map(p=>`${p.name}${p.active?' (active)':''}: ${p.description||''}`).join('\n'),mcpList=mcp.list().map(s=>`${s.name} (${s.type})`).join(', ');return`You are Craft Code, a precise general coding and research agent working in ${cwd}.
 Mode: ${mode}. Agent depth: ${effort}. In PLAN mode do not modify files or execute shell commands. In BUILD mode make focused changes and verify them. At low depth, minimize exploration and tool loops. At normal depth, balance speed and verification. At high depth, verify assumptions and important changes carefully without becoming verbose.
@@ -11,7 +13,8 @@ const estChars=m=>m.reduce((n,x)=>n+JSON.stringify(x).length,0);
 const fmtContextTokens=n=>n>=1000?`${(n/1000).toFixed(n>=10000?0:1)}k`:String(Math.max(0,Math.round(n)));
 const detail=a=>a?.path||a?.server||a?.command?.slice(0,90)||a?.name||a?.query||'';
 export class AgentSession{
- constructor({client,model,cwd,mode='build',effort='high',config,usage,skills,plugins,mcp,tools,checkpoints=null,events={},turnTokenBudget=0,projectInstructions=[]}){Object.assign(this,{client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,turnTokenBudget,projectInstructions});this.messages=[];this.pluginContext=[];this.lastUsage=null;this.controller=null;this.running=false;}
+ constructor({client,model,cwd,mode='build',effort='high',config,usage,skills,plugins,mcp,tools,checkpoints=null,events={},turnTokenBudget=0,projectInstructions=[]}){Object.assign(this,{client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,turnTokenBudget,projectInstructions});this.messages=[];this.pluginContext=[];this.lastUsage=null;this.lastProof=null;this.controller=null;this.running=false;this.traceEpoch=0;}
+ trace(type,data={}){this.events.onTrace?.({type,messageCount:this.messages.length,epoch:this.traceEpoch,...data});}
  setPluginContext(x=[]){this.pluginContext=(x||[]).filter(Boolean).slice(-12);this.rebuildSystem();} setProjectInstructions(x=[]){this.projectInstructions=x||[];this.rebuildSystem();}
  contextWindow(){return Number(this.client.capabilities?.(this.model)?.contextWindow)||0;}
  contextBudget(tools=[]){const window=this.contextWindow();if(!window)return null;const toolTokens=estimateTokens(tools||[]),configuredOutput=Number(this.client.maxOutputTokens||this.config.maxOutputTokens||8192),outputReserve=Math.min(configuredOutput,Math.max(1024,Math.floor(window*.25))),safety=Math.max(1024,Math.floor(window*.05)),maxMessageTokens=Math.max(1024,window-toolTokens-outputReserve-safety);return{window,toolTokens,outputReserve,safety,triggerTokens:Math.max(1024,Math.floor(maxMessageTokens*.82)),targetTokens:Math.max(768,Math.floor(maxMessageTokens*.62))};}
@@ -21,8 +24,8 @@ export class AgentSession{
  emitContext(){this.events.onContext?.(this.contextChars(),this.contextStats());}
  rebuildSystem(){const next={role:'system',content:systemPrompt(this)};if(this.messages[0]?.role==='system')this.messages[0]=next;else this.messages.unshift(next);}
  clear(){this.messages=[];this.rebuildSystem();this.emitContext();}
- compact({targetChars=0,aggressive=false}={}){const before=this.contextChars(),target=targetChars||Math.max(8000,Math.floor(before*.68)),result=compactConversation(this.messages,{targetChars:target,aggressive});this.messages=result.messages;this.lastCompaction={...result,targetChars:target};this.emitContext();return this.messages.length;}
- repairContext(){const result=repairConversation(this.messages);if(result.repaired||result.dropped){this.messages=result.messages;this.lastRepair={repaired:result.repaired,dropped:result.dropped};this.emitContext();}return result.repaired+result.dropped;}
+ compact({targetChars=0,aggressive=false}={}){const before=this.contextChars(),beforeTokens=Math.ceil(before/4),target=targetChars||Math.max(8000,Math.floor(before*.68)),result=compactConversation(this.messages,{targetChars:target,aggressive});this.messages=result.messages;this.lastCompaction={...result,targetChars:target};if(this.contextChars()<before){this.traceEpoch++;this.trace('context.compact',{beforeTokens,afterTokens:Math.ceil(this.contextChars()/4)});}this.emitContext();return this.messages.length;}
+ repairContext(){const result=repairConversation(this.messages);if(result.repaired||result.dropped){this.messages=result.messages;this.lastRepair={repaired:result.repaired,dropped:result.dropped};this.trace('context.repair',{repaired:result.repaired,dropped:result.dropped});this.emitContext();}return result.repaired+result.dropped;}
  autoCompact(tools=[],reason='auto',aggressive=false){const before=this.contextChars(),limit=this.compactLimit(tools);if(!aggressive&&before<=limit)return false;this.compact({targetChars:this.compactTarget(tools,aggressive),aggressive});const after=this.contextChars();if(after>=before)return false;const b=fmtContextTokens(Math.ceil(before/4)),a=fmtContextTokens(Math.ceil(after/4));this.events.onWarn?.(reason==='provider'?`Provider rejected accumulated context · compacted ${b} → ${a} tokens · retrying automatically.`:`Context nearing model limit · compacted ${b} → ${a} tokens · continuing.`);return true;}
  setMode(m){this.mode=m;this.rebuildSystem();this.emitContext();}
  setEffort(e){this.effort=e;this.rebuildSystem();this.emitContext();}
@@ -38,11 +41,13 @@ export class AgentSession{
   const signal=this.controller.signal;
   if(!this.messages.length)this.rebuildSystem();
   this.messages.push({role:'user',content:userText});
+  this.trace('turn.start',{promptHash:FlightRecorder.hash(userText)});
   this.emitContext();
   if(estChars(this.messages)>this.compactLimit())this.autoCompact([],'auto',false);
 
   let finalText='',totalThisTurn=0;
   let mutated=false,verified=false,verificationPrompted=false,stalled=false;
+  const proof=new ProofTracker({goal:userText,mode:this.mode});
   let lastBatchFingerprint='',repeatBatchCount=0;
   const runtime=this.config.agentRuntime||{};
   const parallelTools=runtime.parallelTools!==false;
@@ -56,14 +61,18 @@ export class AgentSession{
   const runTool=async(call,args)=>{
     if(signal.aborted)throw new DOMException('Aborted','AbortError');
     const name=call.function.name,started=Date.now();
-    const cardId=this.events.onToolStart?.({name,args,detail:detail(args),callId:call.id});
+    const toolDetail=detail(args);this.trace('tool.start',{name,detail:toolDetail,callId:call.id,argsHash:FlightRecorder.hash(args)});
+    const cardId=this.events.onToolStart?.({name,args,detail:toolDetail,callId:call.id});
     let result;
     try{result=await this.tools.execute(name,args,this.mode,{signal});}
     catch(e){if(e.name==='AbortError')throw e;result={error:String(e.message||e)};}
     const content=typeof result==='string'?result:JSON.stringify(result);
-    if(this.tools.isMutating?.(name))mutated=true;
-    if(this.tools.isVerification?.(name,args))verified=true;
-    this.events.onToolEnd?.({cardId,name,args,result:content,durationMs:Date.now()-started,error:typeof result==='object'&&result?.error});
+    const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error);
+    if(isMutating)mutated=true;
+    if(isVerification)verified=true;
+    proof.tool({name,args,result:content,error:toolError,mutating:isMutating});
+    const durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length});
+    this.events.onToolEnd?.({cardId,name,args,result:content,durationMs,error:toolError});
     return{call,content,name,args};
   };
 
@@ -84,6 +93,7 @@ export class AgentSession{
         this.repairContext();
         if(signal.aborted)throw new DOMException('Aborted','AbortError');
         this.events.onThinking?.({step:segment*stepLimit+step});
+        this.trace('model.request',{step:segment*stepLimit+step,model:this.model});
 
         let res,contextRetried=false,sequenceRetried=false;
         while(true){
@@ -117,6 +127,7 @@ export class AgentSession{
           this.events.onUsage?.(res.usage);
         }
         this.messages.push(res.message);
+        this.trace('model.response',{finishReason:res.finishReason||'',usage:res.usage?{prompt_tokens:res.usage.prompt_tokens||0,completion_tokens:res.usage.completion_tokens||0,total_tokens:res.usage.total_tokens||0}:null,responseHash:FlightRecorder.hash(res.message)});
         this.emitContext();
 
         const calls=res.message.tool_calls||[];
@@ -174,14 +185,17 @@ export class AgentSession{
     const hard=this.config.tokenGuard?.hardRequestTokens||0;
     if(hard&&totalThisTurn>hard)this.events.onWarn?.(`This turn consumed ${Math.round(totalThisTurn/1000)}k tokens. Consider /compact or a narrower task.`);
     await this.plugins.hook('session.afterTurn',{usage:this.lastUsage,session:this});
-    return{text:finalText,usage:this.lastUsage,totalThisTurn,cancelled:false,completed:completed&&!budgetReached&&!stalled,stalled,verified};
+    const proofReport=proof.finish({completed:completed&&!budgetReached&&!stalled,cancelled:false,stalled});this.lastProof=proofReport;this.trace('turn.end',{status:proofReport.completed?'completed':stalled?'stalled':budgetReached?'budget':'incomplete',proof:proofReport});
+    return{text:finalText,usage:this.lastUsage,totalThisTurn,cancelled:false,completed:completed&&!budgetReached&&!stalled,stalled,verified,proof:proofReport};
   }catch(e){
     if(e?.name==='AbortError'){
       this.repairContext();
       this.messages.push({role:'assistant',content:'[Turn cancelled by user]'});
       this.events.onCancelled?.();
-      return{text:finalText,usage:this.lastUsage,totalThisTurn,cancelled:true,completed:false,stalled:false,verified};
+      const proofReport=proof.finish({completed:false,cancelled:true,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'cancelled',proof:proofReport});
+      return{text:finalText,usage:this.lastUsage,totalThisTurn,cancelled:true,completed:false,stalled:false,verified,proof:proofReport};
     }
+    const proofReport=proof.finish({completed:false,cancelled:false,stalled});this.lastProof=proofReport;this.trace('turn.error',{error:String(e.message||e),proof:proofReport});
     throw e;
   }finally{
     if(this.mode==='build'&&this.checkpoints){
