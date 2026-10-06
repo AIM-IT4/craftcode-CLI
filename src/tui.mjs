@@ -216,7 +216,7 @@ export class TerminalTui{
   getTranscript(){return this.transcript.filter(m=>m.role!=='thinking');}
   toolStart({name,detail,args}){this.finishAssistantStream();const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
   toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}if(error){this.plushieMood='error';this.plushieMoodUntil=Date.now()+3600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='error'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},3700);}this.schedule();}
-  askApproval(kind,detail){return new Promise(resolve=>{this.approval={kind,detail:String(detail),resolve};this.schedule();});}
+  askApproval(kind,detail,{persistent=true,reason='permission'}={}){return new Promise(resolve=>{this.approval={kind,detail:String(detail),persistent:!!persistent,reason,resolve};this.schedule();});}
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
   askPlanApproval(){return new Promise(resolve=>{this.planApproval={resolve};this.schedule();});}
   resolvePlan(v){const p=this.planApproval;if(!p)return;this.planApproval=null;p.resolve(v);this.schedule();}
@@ -338,7 +338,15 @@ export class TerminalTui{
       if(s==='\x7f'||s==='\b'){this.modal.filter=this.modal.filter.slice(0,-1);this.modal.index=0;return this.schedule();}
       if(s>=' '&&!s.startsWith('\x1b')){this.modal.filter+=s;this.modal.index=0;return this.schedule();}return;
     }
-    if(this.approval){if(s==='a'||s==='A'){this.onPermissionDecision?.(this.approval.kind,'allow');return this.resolveApproval(true);}if(s==='d'||s==='D'){this.onPermissionDecision?.(this.approval.kind,'deny');return this.resolveApproval(false);}if(s==='y'||s==='Y'||s==='\r')return this.resolveApproval(true);if(s==='n'||s==='N'||s==='\x1b')return this.resolveApproval(false);return;}
+    if(this.approval){
+      if(s==='a'||s==='A'||s==='d'||s==='D'){
+        if(!this.approval.persistent){this.setNotice('Always is unavailable for policy-gated commands · use Y/N for this run',2200);return;}
+        const decision=(s==='a'||s==='A')?'allow':'deny',allowed=decision==='allow',done=this.onPermissionDecision?.(this.approval.kind,decision);
+        if(done&&typeof done.then==='function')return done.then(()=>this.resolveApproval(allowed)).catch(e=>{this.setNotice(e?.message||'Could not save permission',2200);this.resolveApproval(false);});
+        return this.resolveApproval(allowed);
+      }
+      if(s==='y'||s==='Y'||s==='\r')return this.resolveApproval(true);if(s==='n'||s==='N'||s==='\x1b')return this.resolveApproval(false);return;
+    }
     if(this.planApproval){if(s==='\r'||s==='y'||s==='Y')return this.resolvePlan('implement');if(s==='n'||s==='N')return this.resolvePlan('stay');if(s==='\x1b')return this.resolvePlan('dismiss');return;}
     if(s==='\x1b[Z'){this.onPermissionCycle?.();return;}
     if(s==='\x03')return this.onExit?.();if(s==='\x0f')return this.selectTool(0,true);if(s==='\x1b[1;3A')return this.selectTool(-1);if(s==='\x1b[1;3B')return this.selectTool(1);
@@ -427,7 +435,7 @@ export class TerminalTui{
       o.push(`${paint('orange','╰')} ${paint('dim','↑/↓ choose · Enter · Esc')} ${paint('orange','─'.repeat(Math.max(1,w-27))+'╯')}`);return o;
     }
     if(this.planApproval)return[paint('yellow','╭─ Plan ready '+ '─'.repeat(Math.max(1,w-14))+'╮'),` ${paint('green','Enter')} approve & build   ${paint('yellow','N')} keep planning   ${paint('dim','Esc dismiss')}`,paint('yellow','╰'+'─'.repeat(w-2)+'╯')];
-    if(this.approval)return[paint('yellow','╭─ Permission '+ '─'.repeat(Math.max(1,w-15))+'╮'),` ${paint('bold',this.approval.kind.toUpperCase())}  ${crop(this.approval.detail,w-14)}`,` ${paint('green','Y / Enter')} once   ${paint('green','A')} always   ${paint('red','N / Esc')} deny   ${paint('red','D')} always deny`,paint('yellow','╰'+'─'.repeat(w-2)+'╯')];
+    if(this.approval){const actions=this.approval.persistent?` ${paint('green','Y / Enter')} once   ${paint('green','A')} always   ${paint('red','N / Esc')} deny   ${paint('red','D')} always deny`:` ${paint('green','Y / Enter')} allow once   ${paint('red','N / Esc')} deny   ${paint('dim','policy-gated · no always bypass')}`;return[paint('yellow','╭─ Permission '+ '─'.repeat(Math.max(1,w-15))+'╮'),` ${paint('bold',this.approval.kind.toUpperCase())}  ${crop(this.approval.detail,w-14)}`,actions,paint('yellow','╰'+'─'.repeat(w-2)+'╯')];}
     return[];
   }
   renderComposer(w,startY){
