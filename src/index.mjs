@@ -22,6 +22,7 @@ import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
 import {runRuntimeEvals} from './evals.mjs';
 import {FlightRecorder,summarizeFlightEvent} from './flight_recorder.mjs';
 import {formatProof} from './proof.mjs';
+import {captureVercel,loginVercel} from './vercel_auth.mjs';
 import {activityForThinking,activityAfterTool} from './activity.mjs';
 
 function parseArgs(){
@@ -74,36 +75,24 @@ function permissionPresetOf(p={}){return Object.entries(PERMISSION_PRESETS).find
 function activityForTool(x={}){const n=String(x.name||''),d=String(x.detail||'');if(n==='semantic_code')return 'Tracing symbols';if(n==='repo_map')return 'Mapping the codebase';if(n==='search_files')return 'Searching';if(n==='read_many_files')return 'Reading files';if(n==='read_file'||n==='list_files')return 'Reading';if(n==='apply_patch'||n==='replace_in_file'||n==='write_file')return 'Editing';if(n==='generate_image')return 'Creating image';if(n==='discover_project_commands')return 'Finding project checks';if(n==='run_command'){if(/(?:^|\s)(test|pytest|jest|vitest|mocha|cargo test|go test|npm test|pnpm test|yarn test)(?:\s|$)/i.test(d))return 'Running tests';if(/lint|eslint|ruff/i.test(d))return 'Linting';if(/typecheck|type-check|tsc/i.test(d))return 'Type checking';if(/build|compile|vite build|next build/i.test(d))return 'Building';return 'Running a command';}if(n==='git_diff')return 'Reviewing the diff';if(n.startsWith('git_'))return 'Checking Git';if(n.startsWith('process_'))return 'Watching the process';if(n==='orchestrate_task')return 'Coordinating agents';if(n==='load_skill')return 'Loading guidance';if(n.includes('mcp'))return 'Connecting';if(n==='update_todo')return 'Planning';return 'Working';}
 const table=(rows,cols)=>rows.map(r=>cols.map(([k,w])=>String(r[k]??'').slice(0,w).padEnd(w)).join('  ')).join('\n');
 const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-const vercelExe=()=>process.platform==='win32'?'npx.cmd':'npx';
-async function vercelCapture(args,cwd){
-  return new Promise((resolve)=>{
-    const p=spawn(vercelExe(),['-y','vercel@latest',...args],{cwd,stdio:['ignore','pipe','pipe'],shell:false,windowsHide:true});
-    let stdout='',stderr='';p.stdout?.on('data',b=>stdout+=b);p.stderr?.on('data',b=>stderr+=b);
-    p.on('error',e=>resolve({code:-1,stdout,stderr:String(e.message||e)}));
-    p.on('exit',code=>resolve({code:code??-1,stdout,stderr}));
-  });
-}
 async function vercelBrowserLogin(cwd,tui){
-  let who=await vercelCapture(['whoami'],cwd);
+  let who=await captureVercel(['whoami'],cwd);
   if(who.code===0&&who.stdout.trim())return who.stdout.trim();
   tui.stop();
   try{
     console.log('\nCraft Code → Vercel browser approval');
-    console.log('Opening Vercel OAuth device approval. No global Vercel CLI install is required.\n');
-    await new Promise((resolve,reject)=>{
-      const p=spawn(vercelExe(),['-y','vercel@latest','login'],{cwd,stdio:'inherit',shell:false});
-      p.on('error',reject);p.on('exit',code=>code===0?resolve():reject(new Error('Vercel login exited with code '+code)));
-    });
+    console.log('Starting the official Vercel OAuth device flow. Craft Code will print the approval URL and try to open it in your default browser. No global Vercel CLI installation is required.\n');
+    await loginVercel(cwd);
   }finally{tui.start();}
-  who=await vercelCapture(['whoami'],cwd);
-  if(who.code!==0||!who.stdout.trim())throw new Error('Vercel login completed but vercel whoami could not verify the account.');
+  who=await captureVercel(['whoami'],cwd);
+  if(who.code!==0||!who.stdout.trim())throw new Error('Vercel browser approval finished, but the account could not be verified with vercel whoami. '+String(who.stderr||'').trim());
   return who.stdout.trim();
 }
 
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.5');return;}
+  if(version){console.log('Craft Code 0.14.6');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -116,7 +105,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.5');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.6');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -308,7 +297,7 @@ async function main(){
             const user=await vercelBrowserLogin(cwd,tui);
             tui.setNotice('Vercel connected',2200);
             tui.add('assistant','Vercel connected as `'+user+'` through browser/device approval. No global Vercel CLI installation is required; Craft Code invokes the official client transiently with `npx`. You can now ask for projects, deployments, logs, domains, environment configuration, or REST API operations.');
-          }catch(e){tui.setNotice('Vercel not connected',2200);tui.add('notice',e.message||String(e));}
+          }catch(e){tui.setNotice('Vercel not connected',2200);tui.openInfo('Vercel connection failed',`${e.message||String(e)}\n\nRetry /connect vercel. Craft Code will launch the official OAuth device flow, print the Vercel approval URL, and try to open it automatically. No global Vercel CLI install is required.`);}
           return;
         }
         tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;

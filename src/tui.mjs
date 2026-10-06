@@ -11,21 +11,41 @@ const C={
 };
 const paint=(name,s)=>`${C[name]||''}${s}${C.reset}`;
 const strip=s=>String(s??'').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');
-const width=s=>strip(s).length;
-const crop=(s,n)=>{s=String(s??'');return width(s)<=n?s:strip(s).slice(0,Math.max(0,n-1))+'…';};
+const segmenter=typeof Intl?.Segmenter==='function'?new Intl.Segmenter(undefined,{granularity:'grapheme'}):null;
+const wideCodePoint=cp=>cp>=0x1100&&(cp<=0x115f||cp===0x2329||cp===0x232a||(cp>=0x2e80&&cp<=0xa4cf&&cp!==0x303f)||(cp>=0xac00&&cp<=0xd7a3)||(cp>=0xf900&&cp<=0xfaff)||(cp>=0xfe10&&cp<=0xfe19)||(cp>=0xfe30&&cp<=0xfe6f)||(cp>=0xff00&&cp<=0xff60)||(cp>=0xffe0&&cp<=0xffe6)||(cp>=0x1f300&&cp<=0x1faff)||(cp>=0x20000&&cp<=0x3fffd));
+const graphemes=s=>segmenter?[...segmenter.segment(String(s??''))].map(x=>x.segment):Array.from(String(s??''));
+const graphemeWidth=g=>{
+  if(!g)return 0;
+  if(/^[\u0000-\u001f\u007f-\u009f]+$/.test(g))return 0;
+  if(/^\p{Mark}+$/u.test(g))return 0;
+  const cp=g.codePointAt(0);
+  if(/\p{Extended_Pictographic}/u.test(g)||g.includes('\ufe0f')||wideCodePoint(cp))return 2;
+  return 1;
+};
+export const terminalCellWidth=s=>graphemes(strip(s)).reduce((n,g)=>n+graphemeWidth(g),0);
+const width=terminalCellWidth;
+const sliceCells=(s,max)=>{
+  let out='',used=0;
+  for(const g of graphemes(strip(s))){const gw=graphemeWidth(g);if(used+gw>max)break;out+=g;used+=gw;}
+  return out;
+};
+const crop=(s,n)=>{s=String(s??'');return width(s)<=n?s:sliceCells(s,Math.max(0,n-1))+'…';};
 const padRight=(s,n)=>s+' '.repeat(Math.max(0,n-width(s)));
 const fit=(s,n)=>padRight(crop(s,n),n);
 const wrap=(text,w)=>{
   const out=[];
-  for(const raw of String(text??'').split(/\r?\n/)){
+  for(const rawStyled of String(text??'').split(/\r?\n/)){
+    const raw=strip(rawStyled);
     if(raw===''){out.push('');continue;}
-    let s=raw;
-    while(strip(s).length>w){
-      let i=Math.min(w,s.length),sp=s.slice(0,i).lastIndexOf(' ');
-      if(sp>w*.45)i=sp;
-      out.push(s.slice(0,i));s=s.slice(i).replace(/^ /,'');
+    if(width(raw)<=w){out.push(rawStyled);continue;}
+    let rest=raw;
+    while(width(rest)>w){
+      let part=sliceCells(rest,w),sp=part.lastIndexOf(' ');
+      if(sp>Math.floor(part.length*.45))part=part.slice(0,sp);
+      if(!part)part=sliceCells(rest,Math.max(1,w));
+      out.push(part);rest=rest.slice(part.length).replace(/^ /,'');
     }
-    out.push(s);
+    out.push(rest);
   }
   return out;
 };
@@ -444,7 +464,7 @@ export class TerminalTui{
     return fit(line+' '.repeat(space)+hint,w);
   }
   renderChat(){
-    const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=Math.max(68,cols-3);
+    const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=Math.max(68,cols-4);
     this.regions=[];
     const workspace=crop(path.basename(this.cwd),32),brand=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).header,header=`  ${paint('orange',brand)} ${paint('bold','Craft Code')} ${paint('dim','·')} ${paint('slate',workspace)}`;
     const right=this.notice?paint('yellow',crop(this.notice,42)):paint('dim',crop(this.provider||'provider',20));
