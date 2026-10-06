@@ -66,7 +66,7 @@ Most coding agents hide at least one important thing: context growth, permission
 | Code intelligence | TypeScript-AST symbols, definitions and references plus compact repository mapping |
 | Runtime | Long-running process handles, project command discovery and credential-free deterministic evals |
 | Trust & replay | Local Flight Recorder, safe session time travel, deterministic Proof of Change and evidence-ranked Patch Arena |
-| Automatic context | Task-routed skills with hard token budgets; no skill command required |
+| Automatic context | Task-routed skills, evidence-pinned compaction, duplicate suppression and lean provider requests |
 | Media | Capability-detected image generation written directly to workspace assets |
 | Browser QA | Automatic Playwright verification for UI/web changes before push |
 
@@ -142,6 +142,16 @@ From the shell:
 craftcode continue /path/to/project
 craftcode -c /path/to/project
 ```
+
+### Token-efficient context and output
+
+Craft Code keeps the saved session richer than the request it sends to the model. Recent evidence remains intact, while older tool output is compressed and repeated evidence is replaced by a short content-hash reference. Requirements, changed paths, failed/passed verification commands and browser evidence are pinned when long-session compaction occurs.
+
+`/context` reports both the stored-session estimate and the last lean request, plus context tokens avoided by evidence compression/deduplication.
+
+Output is optimized separately. Craft Code selects a conservative output ceiling from task complexity, asks for compact final summaries by default, bounds subagent narratives, and prefers `apply_patch` for multi-line edits so models do not have to emit an entire existing file or repeat both large old/new blocks.
+
+These optimizations do not remove test, lint, typecheck, build, browser-QA or Proof-of-Change evidence.
 
 ### Automatic skills, images and browser QA
 

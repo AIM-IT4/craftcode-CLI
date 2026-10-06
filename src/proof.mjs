@@ -1,6 +1,7 @@
 const clip=(s,n=180)=>{s=String(s??'').replace(/\s+/g,' ').trim();return s.length>n?s.slice(0,n)+'…':s;};
 const UI_PATH=/(?:^|\/)(?:app|pages|components?|ui|views?|public|styles?)(?:\/|$)|\.(?:tsx|jsx|vue|svelte|html|css|scss|sass|less)$/i;
 const isUiPath=p=>UI_PATH.test(String(p||'').replace(/\\/g,'/'));
+const patchTargets=p=>[...String(p||'').matchAll(/^\+\+\+\s+(?:b\/)?([^\t\r\n]+)/gm)].map(m=>m[1]).filter(x=>x&&x!=='/dev/null').join(', ');
 const commandKind=command=>{
   const c=String(command||'');
   if(/(?:^|\s)(?:test|tests|pytest|vitest|jest|mocha|cargo\s+test|go\s+test|mvn\s+test|gradle\s+test)(?:\s|$)/i.test(c))return'test';
@@ -20,7 +21,7 @@ export class ProofTracker{
   constructor({goal='',mode='build'}={}){this.goal=clip(goal,300);this.mode=mode;this.mutations=[];this.diffReviewed=false;this.discovered=false;this.verifications=[];this.toolErrors=[];this.browserRequired=false;this.browserVerified=false;this.startedAt=Date.now();this.report=null;}
   tool({name,args={},result='',error=false,mutating=false}={}){
     const failed=failedResult(result,error);
-    if(mutating&&!failed){const target=clip(args.path||args.from||args.to||'',160);this.mutations.push({tool:name,target});if(isUiPath(target))this.browserRequired=true;}
+    if(mutating&&!failed){const target=clip(args.path||args.from||args.to||(name==='apply_patch'?patchTargets(args.patch):'')||'',160);this.mutations.push({tool:name,target});if(isUiPath(target))this.browserRequired=true;}
     if(name==='git_diff')this.diffReviewed=true;
     if(name==='discover_project_commands')this.discovered=true;
     if(name==='call_mcp_tool'&&String(args.server||'').toLowerCase()==='playwright'&&/(?:snapshot|screenshot)/i.test(String(args.tool||''))&&!failed)this.browserVerified=true;

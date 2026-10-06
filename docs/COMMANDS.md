@@ -51,7 +51,7 @@ CLI authentication:
 ## Context and project
 
 - `/status`
-- `/context` — context composition, model-window pressure and automatic compaction thresholds
+- `/context` — stored vs lean request size, token savings, output budget, model-window pressure and compaction thresholds
 - `/doctor` — check provider, model, message-protocol and context health
 - `/proof` — show deterministic Proof-of-Change evidence for the latest turn
 - `/flight` — list recent local execution recordings
