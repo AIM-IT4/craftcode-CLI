@@ -120,7 +120,7 @@ CodeCraft remains the default for legacy installations and existing configs/sess
 - Live context-window pressure in the footer plus `/doctor` health checks; long sessions compact before overflow and recover once automatically from recognized provider context/message-sequence 400s.
 - Claude-inspired inline activity language (`✻ Thinking…`, `Tracing symbols…`, `Running tests…`, `Reviewing the diff…`) with `/style claude|classic|minimal`. Font family remains a terminal setting.
 - File attachment/autocomplete with `@path/to/file`.
-- Git checkpoints and `/undo`.
+- Git checkpoints and `/undo`; checkpoint snapshots are created lazily only when a turn is about to mutate the workspace, so read-only Build-mode questions do not pay Git snapshot latency.
 - Shell shortcut syntax such as `!git status` through command policy and the normal permission layer.
 - Long-running dev servers and watchers use owned process handles instead of foreground command timeouts.
 
