@@ -22,7 +22,13 @@ export function sanitizeOAuthData(input={}){
   if(!validTokens(data.lastTokens)){delete data.lastTokens;delete data.lastIssuer;}
   return data;
 }
-function openBrowser(url){const u=String(url);if(process.platform==='win32')execFile('cmd',['/c','start','',u],{windowsHide:true});else if(process.platform==='darwin')execFile('open',[u]);else execFile('xdg-open',[u]);}
+export function browserOpenCommand(url,platform=process.platform){
+  const u=String(url);
+  if(platform==='win32')return{command:'rundll32.exe',args:['url.dll,FileProtocolHandler',u]};
+  if(platform==='darwin')return{command:'open',args:[u]};
+  return{command:'xdg-open',args:[u]};
+}
+function openBrowser(url){const x=browserOpenCommand(url),child=execFile(x.command,x.args,{windowsHide:true});child?.on?.('error',()=>{});}
 export class PersistentOAuthProvider{
   constructor(name){this.name=name;this.file=path.join(AUTH_DIR,`${safe(name)}.json`);this.data={};this.server=null;this.callbackUrl='';this._wait=null;this._pending=null;this.lastState='';}
   async load(){await fs.mkdir(AUTH_DIR,{recursive:true});try{this.data=JSON.parse(await fs.readFile(this.file,'utf8'));}catch{this.data={};}const before=JSON.stringify(this.data);this.data=sanitizeOAuthData(this.data);if(JSON.stringify(this.data)!==before)await this.save();this.lastState=this.data.oauthState||'';return this;}
