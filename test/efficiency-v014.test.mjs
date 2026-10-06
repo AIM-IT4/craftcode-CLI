@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ToolEvidenceLedger,optimizeRequestMessages,outputBudgetForTask,compactSkillText} from '../src/efficiency.mjs';
 import {compactConversation} from '../src/context.mjs';
+import {OpenAICompatibleClient} from '../src/providers/openai-compatible.mjs';
 
 test('adaptive output budget is bounded',()=>{
   const r=outputBudgetForTask({text:'small typo fix',mode:'build',effort:'high',maxOutputTokens:8192});
@@ -57,4 +58,14 @@ test('evidence-pinned compaction keeps requirements changes and failed checks',(
   assert.match(text,/Keep backward compatibility|guest users/);
   assert.match(text,/src\/checkout\.ts/);
   assert.match(text,/Verification failed: npm test/);
+});
+
+test('provider honors per-request output ceiling',async()=>{
+  const old=globalThis.fetch,enc=new TextEncoder();let sent;
+  globalThis.fetch=async(_url,opts)=>{sent=JSON.parse(opts.body);return new Response(new ReadableStream({start(c){c.enqueue(enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'ok'},finish_reason:'stop'}],usage:{total_tokens:2}})+'\n\ndata: [DONE]\n\n'));c.close();}}),{status:200});};
+  try{
+    const client=new OpenAICompatibleClient({baseUrl:'https://example.invalid/v1',maxOutputTokens:8192});
+    await client.stream({model:'m',messages:[{role:'user',content:'hi'}],tools:[],maxOutputTokens:2048});
+    assert.equal(sent.max_tokens,2048);
+  }finally{globalThis.fetch=old;}
 });
