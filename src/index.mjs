@@ -251,7 +251,7 @@ async function main(){
         const chosen=await tui.pickEffort(effort);if(chosen){setEffort(chosen);tui.setNotice(`Agent depth · ${chosen}`);}return;
       }
       if(cmd==='/providers'){
-        const rows=[];for(const p of providers.list()){const a=await resolveProviderApiKey(p.id,p);rows.push(`${p.id===providerId?'●':'○'} ${p.label} [${p.id}] · ${p.auth===false?'no key required':a.key?'authenticated':'not authenticated'} · ${p.baseUrl}`);}tui.add('assistant',rows.join('\n'));return;
+        const rows=[];for(const p of providers.list()){const a=await resolveProviderApiKey(p.id,p);rows.push(`${p.id===providerId?'●':'○'} ${p.label} [${p.id}] · ${p.auth===false?'no key required':a.key?'authenticated':'not authenticated'} · ${p.baseUrl}`);}tui.openInfo('Providers',rows.join('\n')||'No providers configured.');return;
       }
       if(cmd==='/provider'){
         let id=(rest[0]||'').toLowerCase();if(!id){const items=[];for(const p of providers.list()){const a=await resolveProviderApiKey(p.id,p);items.push({id:p.id,label:p.label,meta:p.auth===false?'no key':a.key?'connected':'needs API key'});}id=await tui.pickProvider(items,providerId);if(!id)return;}
@@ -275,9 +275,9 @@ async function main(){
       if(cmd==='/skills'){
         await skills.scan();
         if(rest[0]==='savings'){const x=skills.estimateSavings();tui.add('assistant',`Lazy skills: ${x.skills} discovered. Loading all of them would add roughly ${fmtTokens(x.fullLoadEstimatedTokens)} tokens; Craft Code sends only names/descriptions until load_skill is called.`);return;}
-        tui.add('assistant',skills.list().map(s=>`${s.name}${s.source?` [${s.source}]`:''} — ${s.description}`).join('\n')||'No skills found.');return;
+        tui.openInfo('Skills',skills.list().map(s=>`${s.name}${s.source?` [${s.source}]`:''} — ${s.description}`).join('\n')||'No skills found.');return;
       }
-      if(cmd==='/plugins'){tui.add('assistant',plugins.list().map(p=>`${p.active?'●':'○'} ${p.name}${p.version?` ${p.version}`:''} [${p.type}] — ${p.description||''}`).join('\n')||'No plugins found.');return;}
+      if(cmd==='/plugins'){tui.openInfo('Plugins',plugins.list().map(p=>`${p.active?'●':'○'} ${p.name}${p.version?` ${p.version}`:''} [${p.type}] — ${p.description||''}`).join('\n')||'No plugins found.');return;}
       if(cmd==='/plugin'){
         const sub=(rest[0]||'').toLowerCase();
         if(sub==='marketplace'&&rest[1]==='add'&&rest[2]){const r=await marketplace.add(rest.slice(2).join(' '));await marketplace.scan();return tui.add('assistant',`Marketplace ${r.name} added · ${r.plugins} plugin(s).`);}
@@ -296,8 +296,8 @@ async function main(){
         return tui.add('assistant','Use /browser to start Playwright Chromium, or paste a public URL directly. Public GitHub repo URLs work without a browser through inspect_repo_url.');
       }
       if(cmd==='/mcp'){
-        if(rest[0]==='tools'&&rest[1]){const ts=await mcp.tools(rest[1]);tui.add('assistant',ts.map(t=>`${t.name} — ${t.description||''}`).join('\n')||'No tools.');}
-        else tui.add('assistant',mcp.list().map(x=>{const auth=x.authMode==='browser'?'Browser approval':x.authMode==='token'?'Token / existing login':x.authMode==='local'?'Local':'Direct';return`${x.connected?'●':'○'} ${x.name} [${x.type} · ${auth}]`;}).join('\n')||'No MCP servers configured.');return;
+        if(rest[0]==='tools'&&rest[1]){const ts=await mcp.tools(rest[1]);tui.openInfo(`MCP tools · ${rest[1]}`,ts.map(t=>`${t.name} — ${t.description||''}`).join('\n')||'No tools.');}
+        else tui.openInfo('MCP connectors',mcp.list().map(x=>{const auth=x.authMode==='browser'?'Browser approval':x.authMode==='token'?'Token / existing login':x.authMode==='local'?'Local':'Direct';return`${x.connected?'●':'○'} ${x.name} [${x.type} · ${auth}]`;}).join('\n')||'No MCP servers configured.');return;
       }
       if(cmd==='/connect'){
         let name=rest[0];if(!name){name=await tui.pickConnector(mcp.list());if(!name)return;}
@@ -314,7 +314,7 @@ async function main(){
         tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
       }
       if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');if(rest[0].toLowerCase()==='vercel')return tui.add('assistant','To revoke Vercel browser/device authorization, run `npx -y vercel@latest logout`. Craft Code does not store your Vercel password or OAuth authorization code.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
-      if(cmd==='/agents'){const xs=agents.list();tui.add('assistant',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
+      if(cmd==='/agents'){const xs=agents.list();tui.openInfo('Agents',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
       if(cmd==='/agent'){
         const sub=(rest[0]||'').toLowerCase();if(sub==='spawn'){const role=(rest[1]||'explorer').toLowerCase(),task=rest.slice(2).join(' ');if(!task)return tui.add('notice','Use /agent spawn <explorer|tester|reviewer|researcher|writer> <task>.');let allowShell=false;if(role==='writer')allowShell=await tui.askApproval('shell','Allow this writer subagent to run shell commands inside its isolated Git worktree for tests/verification?');const j=await agents.spawn({role,task,worktree:role==='writer',allowShell});tui.setNotice(`Spawned ${j.id}${role==='writer'&&!allowShell?' · shell verification disabled':''}`);return;}if(sub==='show'&&rest[1]){const j=agents.list().find(x=>x.id===rest[1]);if(!j)return tui.add('notice','Unknown agent id.');const meta=[j.id,j.role,j.status,`${fmtTokens(j.used||0)}/${fmtTokens(j.budget)}`,j.activity||'',j.patchBytes?`patch ${Math.round(j.patchBytes/1024)} KB`:'',j.role==='writer'?`shell ${j.shellAllowed?'allowed':'blocked'}`:''].filter(Boolean).join(' · ');return tui.add('assistant',`${meta}\n\n${j.result||j.error||'Still working…'}`);}if(sub==='apply'&&rest[1]){if(!await tui.askApproval('write',`Apply patch from ${rest[1]} to main workspace?`))return;const r=await agents.apply(rest[1]);tui.add(r.ok?'assistant':'notice',r.message);return;}return command('/agents');
       }
