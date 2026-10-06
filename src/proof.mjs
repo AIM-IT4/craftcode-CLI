@@ -1,5 +1,5 @@
 const clip=(s,n=180)=>{s=String(s??'').replace(/\s+/g,' ').trim();return s.length>n?s.slice(0,n)+'…':s;};
-const UI_PATH=/(?:^|\/)(?:app|pages|src|components?|ui|views?|public|styles?)(?:\/|$)|\.(?:tsx?|jsx?|vue|svelte|html|css|scss|sass|less)$/i;
+const UI_PATH=/(?:^|\/)(?:app|pages|components?|ui|views?|public|styles?)(?:\/|$)|\.(?:tsx|jsx|vue|svelte|html|css|scss|sass|less)$/i;
 const isUiPath=p=>UI_PATH.test(String(p||'').replace(/\\/g,'/'));
 const commandKind=command=>{
   const c=String(command||'');
