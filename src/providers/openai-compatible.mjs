@@ -19,7 +19,17 @@ const retryMs=(r,attempt=0)=>{
   if(reset!=null)return Math.max(750,reset);
   return Math.min(15_000,1500*(2**attempt));
 };
-const unknownCaps=()=>({tools:'unknown',reasoning:'unknown',vision:'unknown',structuredOutput:'unknown',contextWindow:null});
+const unknownCaps=()=>({tools:'unknown',reasoning:'unknown',vision:'unknown',imageGeneration:'unknown',structuredOutput:'unknown',contextWindow:null});
+const asList=v=>Array.isArray(v)?v.map(x=>String(x).toLowerCase()):[];
+const imageGenerationFromMeta=m=>{
+  const explicit=m?.capabilities?.image_generation??m?.capabilities?.imageGeneration??m?.image_generation??m?.imageGeneration;
+  if(typeof explicit==='boolean')return explicit;
+  const outputs=[...asList(m?.output_modalities),...asList(m?.supported_output_modalities),...asList(m?.architecture?.output_modalities),...asList(m?.modalities?.output)];
+  if(outputs.some(x=>/image/.test(x)))return true;
+  const id=String(m?.id||m?.name||'').toLowerCase();
+  if(/(?:^|[-_/])(gpt-image|dall-e|imagen|flux|stable-diffusion|sdxl)(?:[-_/]|$)/.test(id))return true;
+  return'unknown';
+};
 class ProviderRequestError extends Error{
   constructor(label,status,body,{code=null,contextWindow=null,inputTokens=null}={}){
     const resolved=code||classifyProviderError(status,body);
@@ -29,15 +39,15 @@ class ProviderRequestError extends Error{
 }
 
 export class OpenAICompatibleClient{
-  constructor({id='custom',label='OpenAI Compatible',apiKey='',baseUrl,maxOutputTokens=8192,onRateLimit=null,maxRateLimitRetries=4,extraHeaders={}}={}){
+  constructor({id='custom',label='OpenAI Compatible',apiKey='',baseUrl,maxOutputTokens=8192,onRateLimit=null,maxRateLimitRetries=4,extraHeaders={},imageGeneration='auto',imageEndpoint='/images/generations',imageModel=''}={}){
     if(!baseUrl)throw new Error(`Provider ${id} has no baseUrl.`);
-    this.id=id;this.label=label;this.apiKey=String(apiKey||'').trim().replace(/^(["'])(.*)\1$/,'$2').trim();this.baseUrl=String(baseUrl).replace(/\/$/,'');this.maxOutputTokens=maxOutputTokens;this.onRateLimit=onRateLimit;this.maxRateLimitRetries=maxRateLimitRetries;this.extraHeaders={...extraHeaders};this.rateLimits={};this.rateGate=0;this.inFlightEstimatedTokens=0;this.modelMeta=new Map();
+    this.id=id;this.label=label;this.apiKey=String(apiKey||'').trim().replace(/^(["'])(.*)\1$/,'$2').trim();this.baseUrl=String(baseUrl).replace(/\/$/,'');this.maxOutputTokens=maxOutputTokens;this.onRateLimit=onRateLimit;this.maxRateLimitRetries=maxRateLimitRetries;this.extraHeaders={...extraHeaders};this.imageGeneration=imageGeneration;this.imageEndpoint=String(imageEndpoint||'/images/generations');this.imageModel=String(imageModel||'');this.rateLimits={};this.rateGate=0;this.inFlightEstimatedTokens=0;this.modelMeta=new Map();
   }
   headers(){return{...(this.apiKey?{Authorization:`Bearer ${this.apiKey}`}:{}),'Content-Type':'application/json',...this.extraHeaders};}
   captureRateLimits(r){const num=k=>{const v=Number(r.headers.get(k));return Number.isFinite(v)&&v>=0?v:null;};this.rateLimits={rpmLimit:num('x-ratelimit-limit'),rpmRemaining:num('x-ratelimit-remaining'),tpmLimit:num('x-ratelimit-limit-tokens'),tpmRemaining:num('x-ratelimit-remaining-tokens'),reset:r.headers.get('x-ratelimit-reset-tokens')||r.headers.get('x-ratelimit-reset')||null};}
   planHint(){return null;}
   rateProfile(){return{...this.rateLimits,inFlightEstimatedTokens:this.inFlightEstimatedTokens};}
-  capabilities(model){const m=typeof model==='string'?this.modelMeta.get(model):model;return{...unknownCaps(),contextWindow:Number(m?.context_length||m?.context_window)||null};}
+  capabilities(model){const m=typeof model==='string'?this.modelMeta.get(model):model;const detected=imageGenerationFromMeta(m),configured=this.imageGeneration===true?true:this.imageGeneration===false?false:detected;return{...unknownCaps(),imageGeneration:this.imageModel?true:configured,contextWindow:Number(m?.context_length||m?.context_window)||null};}
   async models({signal}={}){const r=await fetch(`${this.baseUrl}/models`,{headers:this.headers(),signal});this.captureRateLimits(r);if(!r.ok){const d=await r.text();if(r.status===401)throw new Error(`${this.label} authentication failed (401). Check the provider API key.`);throw new Error(`${this.label} models API ${r.status}: ${d}`);}const j=await r.json(),models=j.data||j.models||[];this.modelMeta=new Map(models.map(m=>[m.id||m.name,m]).filter(([id])=>id));return models;}
   _resetDelayMs(){return resetMsFromValue(this.rateLimits.reset);}
   _refreshWindowIfElapsed(){const d=this._resetDelayMs();if(d===0&&this.rateLimits.tpmLimit){this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;if(this.rateLimits.rpmLimit)this.rateLimits.rpmRemaining=this.rateLimits.rpmLimit;}}
