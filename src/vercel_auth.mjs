@@ -40,27 +40,42 @@ export async function captureVercel(args,cwd){
   });
 }
 
-export async function loginVercel(cwd,{stdout=process.stdout,stderr=process.stderr,openUrl=openExternalUrl}={}){
+function terminateTree(p){
+  if(!p||p.exitCode!=null)return;
+  try{
+    if(process.platform==='win32'&&p.pid){
+      const k=spawn('taskkill',['/pid',String(p.pid),'/T','/F'],{windowsHide:true,stdio:'ignore',shell:false});k.unref?.();
+    }else p.kill('SIGTERM');
+  }catch{try{p.kill();}catch{}}
+}
+
+export async function loginVercel(cwd,{signal,onOutput=()=>{},onUrl=()=>{},openUrl=openExternalUrl}={}){
   return new Promise((resolve,reject)=>{
-    let combined='',approvalUrl='',settled=false;
-    const p=spawnVercel(['login'],cwd,{stdio:['inherit','pipe','pipe']});
+    let combined='',approvalUrl='',settled=false,cancelled=false;
+    const p=spawnVercel(['login'],cwd,{stdio:['ignore','pipe','pipe']});
+    const finishError=e=>{if(settled)return;settled=true;cleanup();reject(e);};
+    const cleanup=()=>signal?.removeEventListener?.('abort',abort);
+    const abort=()=>{
+      if(settled)return;cancelled=true;terminateTree(p);
+      const e=new Error('Vercel browser approval cancelled.');e.name='AbortError';finishError(e);
+    };
+    if(signal?.aborted)return abort();
+    signal?.addEventListener?.('abort',abort,{once:true});
     const inspect=chunk=>{
-      combined=(combined+String(chunk||'')).slice(-12000);
+      const text=String(chunk||'');combined=(combined+text).slice(-16000);onOutput(text,combined);
       if(approvalUrl)return;
       const found=extractVercelApprovalUrl(combined);
       if(found){
-        approvalUrl=found;
-        stdout.write(`\n\nCraft Code → Vercel approval link\n${found}\n\n`);
-        openUrl(found);
+        approvalUrl=found;onUrl(found);openUrl(found);
       }
     };
-    p.stdout?.on('data',b=>{stdout.write(b);inspect(b);});
-    p.stderr?.on('data',b=>{stderr.write(b);inspect(b);});
-    p.on('error',e=>{if(settled)return;settled=true;reject(new Error(`Unable to start Vercel login: ${e.message||e}`));});
+    p.stdout?.on('data',inspect);p.stderr?.on('data',inspect);
+    p.on('error',e=>finishError(new Error(`Unable to start Vercel login: ${e.message||e}`)));
     p.on('exit',code=>{
-      if(settled)return;settled=true;
-      if(code===0)return resolve({approvalUrl});
-      reject(new Error(`Vercel login exited with code ${code??'?'}. ${approvalUrl?'Complete the browser approval and retry /connect vercel.':'No approval URL was emitted.'}`));
+      if(settled)return;settled=true;cleanup();
+      if(cancelled)return;
+      if(code===0)return resolve({approvalUrl,output:combined});
+      reject(new Error(`Vercel login exited with code ${code??'?'}. ${approvalUrl?'Browser approval was shown but the login did not complete.':'No approval URL was emitted. Output: '+stripAnsi(combined).trim().slice(-1200)}`));
     });
   });
 }
