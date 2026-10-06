@@ -85,6 +85,7 @@ const COMMANDS=[
   {cmd:'/context',desc:'Inspect current context size and composition'},
   {cmd:'/doctor',desc:'Check provider/session/context health'},
   {cmd:'/style',desc:'Visual style: Claude / Classic / Minimal'},
+  {cmd:'/plushie',desc:'CraftCode Spark mascot: auto / on / off'},
   {cmd:'/instructions',desc:'Show/reload AGENTS.md and project instructions'},
   {cmd:'/init',desc:'Create a starter AGENTS.md'},
   {cmd:'/settings',desc:'Persistent workspace settings'},
@@ -154,7 +155,7 @@ const fmtPlan=n=>n===Infinity?'Unlimited':fmtTokens(n);
 export class TerminalTui{
   constructor(o){
     Object.assign(this,o);
-    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';
+    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';this.plushie=['auto','on','off'].includes(o.plushie)?o.plushie:'auto';this.plushieMood='idle';this.plushieMoodUntil=0;
     this.transcript=[];this.input='';this.cursor=0;this.history=[];this.hist=-1;
     this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;this.contextWindowTokens=Number(o.contextWindowTokens)||0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
@@ -188,10 +189,10 @@ export class TerminalTui{
   }
   enterSelectionMode(){this.selectionRestoreMouse=this.mouseCapture;this.selectionMode=true;this.setMouseCapture(false);this.setNotice('Selection mode · Esc returns to Craft Code',1800);}
   exitSelectionMode(){if(!this.selectionMode)return;this.selectionMode=false;if(this.selectionRestoreMouse)this.setMouseCapture(true);this.selectionRestoreMouse=false;this.schedule();}
-  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
+  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.plushie&&['auto','on','off'].includes(x.plushie))this.plushie=x.plushie;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
-    if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
-    if(!v&&this.busy){this.finishAssistantStream();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}}
+    if(v&&!this.busy){this.plushieMood='working';this.plushieMoodUntil=0;this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
+    if(!v&&this.busy){this.finishAssistantStream();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}if(this.plushieMood!=='error'){this.plushieMood='success';this.plushieMoodUntil=Date.now()+2600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='success'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},2700);}}
     this.busy=v;this.schedule();
   }
   setActivity(s){const t=[...this.transcript].reverse().find(m=>m.role==='thinking'&&m.status==='running');if(t&&s&&!/^(read_|write_|replace_|run_|git_|list_|search_|call_|update_)/.test(String(s)))t.detail=String(s).replace(/…$/,'');this.schedule();}
@@ -207,7 +208,7 @@ export class TerminalTui{
   replaceTranscript(x=[]){this.transcript=x.map(m=>({...m,text:String(m.text??'')}));this.schedule();}
   getTranscript(){return this.transcript.filter(m=>m.role!=='thinking');}
   toolStart({name,detail,args}){this.finishAssistantStream();const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
-  toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}this.schedule();}
+  toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}if(error){this.plushieMood='error';this.plushieMoodUntil=Date.now()+3600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='error'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},3700);}this.schedule();}
   askApproval(kind,detail){return new Promise(resolve=>{this.approval={kind,detail:String(detail),resolve};this.schedule();});}
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
   askPlanApproval(){return new Promise(resolve=>{this.planApproval={resolve};this.schedule();});}
@@ -467,6 +468,24 @@ export class TerminalTui{
     if(this.mouseCapture)this.regions.push({x1:3,x2:3+width(joined),y,action:'usage'});
     return fit(line+' '.repeat(space)+hint,w);
   }
+  plushieLines(w,rows,{blocked=false}={}){
+    if(this.plushie==='off'||blocked)return[];
+    const visible=this.plushie==='on'?(w>=70&&rows>=27):(w>=92&&rows>=31);
+    if(!visible)return[];
+    const activeMood=this.busy?'working':(Date.now()<this.plushieMoodUntil?this.plushieMood:'idle');
+    const frame=this.spinnerIndex%2;
+    let spark='✦',face='• ᴗ •',tone='orange';
+    if(activeMood==='working'){spark=frame?'✧':'✦';face=frame?'◓ ᴗ ◐':'◐ ᴗ ◓';tone='orange';}
+    else if(activeMood==='success'){spark='✦';face='^ ᴗ ^';tone='green';}
+    else if(activeMood==='error'){spark='!';face='• ︵ •';tone='red';}
+    const raw=[
+      paint(tone,'      '+spark),
+      paint(tone,'   ╭───────╮'),
+      paint(tone,`  ( ${face} )`),
+      paint(tone,'   ╰─╯ ╰─╯')+paint('dim','  Spark')
+    ];
+    return raw.map(line=>' '.repeat(Math.max(0,w-width(line)))+line);
+  }
   renderChat(){
     const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34),w=Math.max(68,cols-4);
     this.regions=[];
@@ -479,13 +498,13 @@ export class TerminalTui{
     if(this.todos.length){progress.push(`  ${paint('dim','Progress')}`);for(const t of this.todos.slice(0,5))progress.push(`  ${t.status==='completed'?paint('green','✓'):t.status==='in_progress'?paint('orange',spinner[this.spinnerIndex]):paint('dim','○')} ${paint(t.status==='in_progress'?'white':'slate',crop(t.text,w-8))}`);}
     if(this.queue.length)progress.push(`  ${paint('blue','↳')} ${paint('dim',`${this.queue.length} queued`)}`);
     const runningAgents=this.agents.filter(a=>a.status==='running'||a.status==='starting');if(runningAgents.length){progress.push(`  ${paint('dim','Agents')}`);for(const a of runningAgents.slice(0,4))progress.push(`  ${paint('violet',spinner[this.spinnerIndex])} ${paint('white',a.role)} ${paint('dim',`${fmtTokens(a.used||0)}/${fmtTokens(a.budget||0)} · ${crop(a.task,w-28)}`)}`);}
-    const ov=this.overlay(w),composer=this.renderComposer(w,0);
-    const chromeH=2+progress.length+ov.length+composer.suggestions.length+composer.box.length+2;
+    const ov=this.overlay(w),composer=this.renderComposer(w,0),plushie=this.plushieLines(w,rows,{blocked:ov.length>0||composer.suggestions.length>0});
+    const chromeH=2+progress.length+ov.length+plushie.length+composer.suggestions.length+composer.box.length+2;
     const bodyH=Math.max(3,rows-chromeH);
     if(this.scrollOffset){const e=Math.max(0,body.length-this.scrollOffset);body=body.slice(Math.max(0,e-bodyH),e);}else body=body.slice(-bodyH);
     const out=[top,paint('slate2','─'.repeat(w))];
     for(let i=0;i<bodyH;i++)out.push(body[i]||'');
-    out.push(...progress,...ov,...composer.suggestions);
+    out.push(...progress,...ov,...plushie,...composer.suggestions);
     const composerStart=out.length+1;out.push(...composer.box);
     const usageY=out.length+1;out.push(this.usageLine(w,usageY));
     const toolbarY=out.length+1;out.push(this.toolbarLine(w,toolbarY));
