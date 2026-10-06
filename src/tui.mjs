@@ -283,13 +283,17 @@ export class TerminalTui{
       if(this.modal.type==='usage'){if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();return;}
       if(this.modal.type==='info'){
         if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();
-        if(s==='\x1b[A'||s==='\x1b[5~'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+4);return this.schedule();}
-        if(s==='\x1b[B'||s==='\x1b[6~'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-4);return this.schedule();}
+        if(s==='\x1b[A'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+1);return this.schedule();}
+        if(s==='\x1b[B'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-1);return this.schedule();}
+        if(s==='\x1b[5~'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+8);return this.schedule();}
+        if(s==='\x1b[6~'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-8);return this.schedule();}
         return;
       }
       const a=this.modalItems();if(s==='\x1b')return this.closeModal();if(s==='\r')return this.closeModal(a[this.modal.index]?.id||null);
       if(s==='\x1b[A'){this.modal.index=Math.max(0,this.modal.index-1);return this.schedule();}
       if(s==='\x1b[B'){this.modal.index=Math.min(Math.max(0,a.length-1),this.modal.index+1);return this.schedule();}
+      if(s==='\x1b[5~'){this.modal.index=Math.max(0,this.modal.index-7);return this.schedule();}
+      if(s==='\x1b[6~'){this.modal.index=Math.min(Math.max(0,a.length-1),this.modal.index+7);return this.schedule();}
       if(s==='\x7f'||s==='\b'){this.modal.filter=this.modal.filter.slice(0,-1);this.modal.index=0;return this.schedule();}
       if(s>=' '&&!s.startsWith('\x1b')){this.modal.filter+=s;this.modal.index=0;return this.schedule();}return;
     }
@@ -297,7 +301,6 @@ export class TerminalTui{
     if(this.planApproval){if(s==='\r'||s==='y'||s==='Y')return this.resolvePlan('implement');if(s==='n'||s==='N')return this.resolvePlan('stay');if(s==='\x1b')return this.resolvePlan('dismiss');return;}
     if(s==='\x1b[Z'){this.onPermissionCycle?.();return;}
     if(s==='\x03')return this.onExit?.();if(s==='\x0f')return this.selectTool(0,true);if(s==='\x1b[1;3A')return this.selectTool(-1);if(s==='\x1b[1;3B')return this.selectTool(1);
-    if(s==='\x1b[5~'){this.scrollOffset+=10;return this.schedule();}if(s==='\x1b[6~'){this.scrollOffset=Math.max(0,this.scrollOffset-10);return this.schedule();}
     if(this.busy&&s==='\x1b'){this.setNotice('Cancelling…',1200);return this.onCancel?.();}
     if(s==='\r'){
       const fs=this.fileSuggestions();if(fs.length&&this.input.endsWith(this.fileToken()||''))return this.insertFile();
@@ -311,7 +314,10 @@ export class TerminalTui{
     if(s==='\x1b[D'){this.cursor=Math.max(0,this.cursor-1);this.suggestionsDismissed=false;return this.schedule();}if(s==='\x1b[C'){this.cursor=Math.min(this.input.length,this.cursor+1);this.suggestionsDismissed=false;return this.schedule();}
     const fs=this.fileSuggestions(),cs=this.commandSuggestions();
     if(fs.length&&(s==='\x1b[A'||s==='\x1b[B')){this.fileSuggestionIndex=(this.fileSuggestionIndex+(s==='\x1b[A'?-1:1)+fs.length)%fs.length;return this.schedule();}
+    if(fs.length&&(s==='\x1b[5~'||s==='\x1b[6~')){this.fileSuggestionIndex=Math.max(0,Math.min(fs.length-1,this.fileSuggestionIndex+(s==='\x1b[5~'?-7:7)));return this.schedule();}
     if(this.input.startsWith('/')&&cs.length&&(s==='\x1b[A'||s==='\x1b[B')){this.commandSelection=(this.commandSelection+(s==='\x1b[A'?-1:1)+cs.length)%cs.length;return this.schedule();}
+    if(this.input.startsWith('/')&&cs.length&&(s==='\x1b[5~'||s==='\x1b[6~')){this.commandSelection=Math.max(0,Math.min(cs.length-1,this.commandSelection+(s==='\x1b[5~'?-7:7)));return this.schedule();}
+    if(s==='\x1b[5~'){this.scrollOffset+=10;return this.schedule();}if(s==='\x1b[6~'){this.scrollOffset=Math.max(0,this.scrollOffset-10);return this.schedule();}
     if(s==='\x10'){if(this.history.length){this.hist=Math.min(this.history.length-1,this.hist+1);this.input=this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
     if(s==='\x0e'){if(this.hist>=0){this.hist--;this.input=this.hist<0?'':this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
     if(s==='\x1b[A'){this.scrollOffset+=4;return this.schedule();}
@@ -366,7 +372,7 @@ export class TerminalTui{
       const title=this.modal.title||'Info',content=markdownLines(this.modal.text,Math.max(20,w-4)),page=Math.min(14,Math.max(6,Math.floor((process.stdout.rows||34)/3))),maxScroll=Math.max(0,content.length-page),scroll=Math.max(0,Math.min(maxScroll,this.modal.scroll||0)),end=Math.max(0,content.length-scroll),start=Math.max(0,end-page),shown=content.slice(start,end),o=[paint('orange',`╭─ ${crop(title,Math.max(8,w-12))} ${'─'.repeat(Math.max(1,w-Math.min(w-12,width(title))-5))}╮`)];
       for(const line of shown)o.push(` ${crop(line,w-3)}`);
       if(!shown.length)o.push(` ${paint('dim','(empty)')}`);
-      o.push(` ${paint('dim',`${content.length?start+1:0}–${end} of ${content.length} · ↑/↓/PgUp/PgDn scroll · Enter/Esc/Q close`)}`);
+      o.push(` ${paint('dim',`${content.length?start+1:0}–${end} of ${content.length} · ↑/↓ row · PgUp/PgDn page · Enter/Esc/Q close`)}`);
       o.push(paint('orange','╰'+'─'.repeat(w-2)+'╯'));return o;
     }
     if(this.modal){
@@ -383,7 +389,7 @@ export class TerminalTui{
   renderComposer(w,startY){
     const fs=this.fileSuggestions(),cs=fs.length?[]:this.commandSuggestions(),suggestions=[];
     if(fs.length){suggestions.push(` ${paint('dim','Files')}`);fs.slice(0,7).forEach((x,i)=>suggestions.push(` ${i===this.fileSuggestionIndex?paint('orange','❯'):paint('dim',' ')} ${paint(i===this.fileSuggestionIndex?'white':'slate','@'+crop(x,w-8))}`));}
-    else if(cs.length){const page=7,selected=Math.max(0,Math.min(cs.length-1,this.commandSelection)),start=Math.max(0,Math.min(selected-Math.floor(page/2),Math.max(0,cs.length-page))),end=Math.min(cs.length,start+page);suggestions.push(` ${paint('dim',`Commands · ${start+1}–${end} of ${cs.length} · ↑/↓ scroll`)}`);cs.slice(start,end).forEach((x,j)=>{const i=start+j;suggestions.push(` ${i===selected?paint('orange','❯'):paint('dim',' ')} ${paint(i===selected?'white':'slate',x.cmd.padEnd(13))} ${paint('dim',crop(x.desc,w-22))}`);});}
+    else if(cs.length){const page=7,selected=Math.max(0,Math.min(cs.length-1,this.commandSelection)),start=Math.max(0,Math.min(selected-Math.floor(page/2),Math.max(0,cs.length-page))),end=Math.min(cs.length,start+page);suggestions.push(` ${paint('dim',`Commands · ${start+1}–${end} of ${cs.length} · ↑/↓ · PgUp/PgDn`)}`);cs.slice(start,end).forEach((x,j)=>{const i=start+j;suggestions.push(` ${i===selected?paint('orange','❯'):paint('dim',' ')} ${paint(i===selected?'white':'slate',x.cmd.padEnd(13))} ${paint('dim',crop(x.desc,w-22))}`);});}
     const caret='▌',raw=this.input?this.input.slice(0,this.cursor)+caret+this.input.slice(this.cursor):`${paint('slate','Ask anything…')} ${paint('dim','(@ files · / commands)')} ${caret}`;
     const inputLines=wrap(raw,w-6).slice(-3),box=[];
     box.push(` ${paint('slate2','╭'+'─'.repeat(w-4)+'╮')}`);
