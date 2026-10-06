@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ToolEvidenceLedger,optimizeRequestMessages,outputBudgetForTask,compactSkillText} from '../src/efficiency.mjs';
+import {compactConversation} from '../src/context.mjs';
 
 test('adaptive output budget is bounded',()=>{
   const r=outputBudgetForTask({text:'small typo fix',mode:'build',effort:'high',maxOutputTokens:8192});
@@ -35,4 +36,25 @@ test('skill prompt compaction removes metadata but preserves instructions',()=>{
   assert.doesNotMatch(compact,/internal/);
   assert.match(compact,/Use snapshots/);
   assert.match(compact,/Check console/);
+});
+
+test('evidence-pinned compaction keeps requirements changes and failed checks',()=>{
+  const messages=[
+    {role:'system',content:'sys'},
+    {role:'user',content:'Keep backward compatibility and fix checkout.'},
+    {role:'assistant',content:null,tool_calls:[{id:'w1',type:'function',function:{name:'write_file',arguments:JSON.stringify({path:'src/checkout.ts',content:'x'})}}]},
+    {role:'tool',tool_call_id:'w1',content:'Wrote src/checkout.ts'},
+    {role:'assistant',content:null,tool_calls:[{id:'t1',type:'function',function:{name:'run_command',arguments:JSON.stringify({command:'npm test'})}}]},
+    {role:'tool',tool_call_id:'t1',content:'checkout failed\n(exit 1)'},
+    {role:'user',content:'Now also handle guest users.'},
+    {role:'assistant',content:'working'},
+    {role:'user',content:'continue'},
+    {role:'assistant',content:'working again'},
+    {role:'user',content:'finish'},
+    {role:'assistant',content:'done'}
+  ];
+  const r=compactConversation(messages,{targetChars:900,aggressive:true}),text=JSON.stringify(r.messages);
+  assert.match(text,/Keep backward compatibility|guest users/);
+  assert.match(text,/src\/checkout\.ts/);
+  assert.match(text,/Verification failed: npm test/);
 });
