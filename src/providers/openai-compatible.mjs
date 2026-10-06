@@ -59,6 +59,23 @@ export class OpenAICompatibleClient{
     if(tpm&&remaining!=null){const available=Math.max(0,remaining-this.inFlightEstimatedTokens),headroom=Math.max(2000,Math.floor(tpm*0.04));if(estimated+headroom>available&&remaining<tpm){const ms=Math.max(750,this._resetDelayMs()??1500);this.rateGate=Math.max(this.rateGate,Date.now()+ms);this.onRateLimit?.({attempt:0,retryMs:ms,tpmLimit:tpm,tpmRemaining:remaining,message:'Proactive TPM pacing',proactive:true,estimatedTokens:estimated,provider:this.id});await this._waitGate(signal);if(this.rateLimits.tpmLimit)this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;}}
     this.inFlightEstimatedTokens+=estimated;let released=false;return()=>{if(released)return;released=true;this.inFlightEstimatedTokens=Math.max(0,this.inFlightEstimatedTokens-estimated);};
   }
+  async generateImage({model,prompt,size='1024x1024',quality='',background='',signal}={}){
+    const chosen=this.imageModel||model;if(!chosen)throw new Error(this.label+' image generation requires a model.');
+    if(!this.imageModel&&this.capabilities(chosen).imageGeneration!==true)throw new Error(this.label+' model '+chosen+' does not advertise image-generation support.');
+    const endpoint=this.imageEndpoint.startsWith('/')?this.imageEndpoint:'/'+this.imageEndpoint;
+    const base={model:chosen,prompt:String(prompt||''),n:1,size:String(size||'1024x1024')};if(!base.prompt.trim())throw new Error('Image prompt is required.');
+    if(quality)base.quality=quality;if(background)base.background=background;
+    const request=body=>fetch(this.baseUrl+endpoint,{method:'POST',headers:this.headers(),body:JSON.stringify(body),signal});
+    let r=await request({...base,response_format:'b64_json'});this.captureRateLimits(r);
+    if(!r.ok&&r.status===400){const first=await r.text();if(/response[_ -]?format|b64_json/i.test(first)){r=await request(base);this.captureRateLimits(r);}else throw new ProviderRequestError(this.label,r.status,first);}
+    if(!r.ok){const body=await r.text();throw new ProviderRequestError(this.label,r.status,body);}
+    const j=await r.json(),item=j?.data?.[0]||j?.images?.[0]||j,b64=item?.b64_json||item?.base64||item?.image_base64;
+    if(b64)return{bytes:Buffer.from(String(b64).replace(/^data:[^,]+,/i,''),'base64'),mimeType:item?.mime_type||'image/png',model:chosen,revisedPrompt:item?.revised_prompt||''};
+    const url=item?.url||item?.image_url;if(!url)throw new Error(this.label+' image API returned neither base64 image data nor a URL.');
+    const img=await fetch(url,{signal});if(!img.ok)throw new Error(this.label+' image download failed ('+img.status+').');
+    const mimeType=img.headers.get('content-type')||'image/png';if(!/^image\//i.test(mimeType))throw new Error(this.label+' image URL returned unexpected content type '+mimeType+'.');
+    return{bytes:Buffer.from(await img.arrayBuffer()),mimeType,model:chosen,revisedPrompt:item?.revised_prompt||'',url};
+  }
   async stream({model,messages,tools,onText,signal}){
     const inputTokens=this.estimateInputTokens(messages,tools),contextWindow=this.capabilities(model)?.contextWindow||0,safety=contextWindow?Math.max(512,Math.floor(contextWindow*.02)):0;
     if(contextWindow&&inputTokens>=contextWindow-safety)throw new ProviderRequestError(this.label,0,`Estimated input ${inputTokens} tokens exceeds the ${contextWindow}-token model context window.`,{code:'CONTEXT_LENGTH',contextWindow,inputTokens});
