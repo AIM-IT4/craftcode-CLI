@@ -260,7 +260,7 @@ Use:
 /mcp
 ```
 
-Craft Code supports stdio and HTTP MCP transports, lazy tool discovery and browser OAuth where the server supports it. Connector pickers identify Browser approval, Token / existing login, and Local service flows explicitly. `/connect vercel` launches Vercel's browser/device approval automatically through a transient `npx -y vercel@latest` invocation, so a global Vercel CLI install is not required. GitHub, Vercel, Supabase and other integrations remain behind the same permission model as local shell/file actions.
+Craft Code supports stdio and HTTP MCP transports, lazy tool discovery and browser OAuth where the server supports it. Connector pickers identify Browser approval, Token / existing login, and Local service flows explicitly. `/connect supabase` uses the hosted Supabase MCP browser flow with dynamic client registration and issuer-scoped persisted OAuth credentials; no PAT or manually entered client ID is needed for the normal interactive flow. `/connect vercel` launches Vercel's browser/device approval automatically through a transient `npx -y vercel@latest` invocation, so a global Vercel CLI install is not required. GitHub, Vercel, Supabase and other integrations remain behind the same permission model as local shell/file actions.
 
 ### Project-native instructions
 
