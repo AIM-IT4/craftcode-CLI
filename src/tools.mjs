@@ -1,6 +1,5 @@
-import fs from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import{execFile}from'node:child_process';import{promisify}from'node:util';import{fetchUrl,inspectRepoUrl,readRepoFile}from'./web_tools.mjs';import{SemanticIndex}from'./semantic.mjs';import{CommandPolicy}from'./policy.mjs';import{ProcessManager}from'./processes.mjs';import{discoverProjectCommands}from'./project_commands.mjs';import{ToolCache}from'./cache.mjs';const execFileP=promisify(execFile);
+import fs from 'node:fs/promises';import path from 'node:path';import {safePath} from './paths.mjs';import os from 'node:os';import{execFile}from'node:child_process';import{promisify}from'node:util';import{fetchUrl,inspectRepoUrl,readRepoFile}from'./web_tools.mjs';import{SemanticIndex}from'./semantic.mjs';import{CommandPolicy}from'./policy.mjs';import{ProcessManager}from'./processes.mjs';import{discoverProjectCommands}from'./project_commands.mjs';import{ToolCache}from'./cache.mjs';const execFileP=promisify(execFile);
 const schema=(name,description,properties={},required=[])=>({type:'function',function:{name,description,parameters:{type:'object',properties,required,additionalProperties:false}}});
-function safePath(cwd,p='.') {const full=path.resolve(cwd,p),root=path.resolve(cwd);if(full!==root&&!full.startsWith(root+path.sep))throw new Error('Path escapes workspace');return full;}
 function patchPaths(cwd,patch=''){
   const out=[];for(const line of String(patch).split(/\r?\n/)){
     if(!line.startsWith('+++ ')&&!line.startsWith('--- '))continue;

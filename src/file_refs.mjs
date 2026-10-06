@@ -1,6 +1,6 @@
+import {safePath} from './paths.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-function safePath(cwd,p){const full=path.resolve(cwd,p),root=path.resolve(cwd);if(full!==root&&!full.startsWith(root+path.sep))throw new Error('Path escapes workspace');return full;}
 function clip(s,n){s=String(s??'');return s.length>n?s.slice(0,n)+`\n… clipped ${s.length-n} chars`:s;}
 export class FileReferenceIndex{
  constructor(cwd,{ignore=[],maxFiles=6000,maxAttachChars=24000,maxTotalAttachChars=60000}={}){Object.assign(this,{cwd:path.resolve(cwd),ignore:new Set(ignore),maxFiles,maxAttachChars,maxTotalAttachChars});this.files=[];}

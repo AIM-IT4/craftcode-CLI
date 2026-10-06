@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {safePath} from './paths.mjs';
 import os from 'node:os';
 import crypto from 'node:crypto';
 
@@ -9,11 +10,6 @@ const stable=value=>{
   if(Array.isArray(value))return value.map(stable);
   if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])]));
   return value;
-};
-const safePath=(cwd,p='.')=>{
-  const root=path.resolve(cwd),full=path.resolve(root,p);
-  if(full!==root&&!full.startsWith(root+path.sep))throw new Error('Path escapes workspace');
-  return full;
 };
 
 async function statVersion(file){

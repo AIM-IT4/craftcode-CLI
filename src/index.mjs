@@ -109,7 +109,7 @@ async function vercelBrowserLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.16');return;}
+  if(version){console.log('Craft Code 0.14.17');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -122,7 +122,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.16');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.17');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -318,7 +318,7 @@ async function main(){
           }catch(e){tui.setNotice('Vercel not connected',2200);tui.openInfo('Vercel connection failed',`${e.message||String(e)}\n\nRetry /connect vercel. The approval flow now stays inside Craft Code; Esc cancels it, and the browser URL appears in the auth panel as soon as Vercel emits it.`);}
           return;
         }
-        tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
+        tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name,{onAuthUrl:u=>tui.add('notice',`Opening your browser to authorize ${name}. If it did not open, paste this URL into a browser:\n${u}`)});tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
       }
       if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');if(rest[0].toLowerCase()==='vercel')return tui.add('assistant','To revoke Vercel browser/device authorization, run `npx -y vercel@latest logout`. Craft Code does not store your Vercel password or OAuth authorization code.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
       if(cmd==='/agents'){const xs=agents.list();tui.openInfo('Agents',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}

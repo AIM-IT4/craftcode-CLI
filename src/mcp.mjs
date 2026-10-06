@@ -3,6 +3,9 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import { expandEnv } from './config.mjs';
 import { PersistentOAuthProvider } from './oauth.mjs';
+import { createRequire } from 'node:module';
+
+const APP_VERSION=(()=>{try{return createRequire(import.meta.url)('../package.json').version;}catch{return '0.0.0';}})();
 
 const execFileP=promisify(execFile);
 
@@ -56,11 +59,11 @@ export class McpManager {
       return {...root,...stdio};
     } catch (e) { throw new Error('MCP client dependency missing. Run: npm install @modelcontextprotocol/client zod'); }
   }
-  async connect(name,{interactive=true}={}) {
+  async connect(name,{interactive=true,onAuthUrl}={}) {
     if (this.clients.has(name)) return this.clients.get(name);
     const raw=this.configs[name]; if (!raw) throw new Error(`Unknown MCP server: ${name}`);
     const c=expandEnv(raw); const sdk=await this._sdk(); const {Client,StreamableHTTPClientTransport,StdioClientTransport}=sdk;
-    const makeClient=()=>new Client({name:'craft-code',version:'0.9.5'});
+    const makeClient=()=>new Client({name:'craft-code',version:APP_VERSION});
     let client=makeClient(),transport,oauthProvider=null;
     try{
       if ((c.type||'http') === 'stdio') {
@@ -74,7 +77,7 @@ export class McpManager {
         if(c.tokenRequired&&!bearer)throw new Error(c.authHint||`${name} requires a token. Configure ${c.tokenEnv||'a bearer token'} first.`);
         const opts={requestInit:{headers}};
         if(c.oauth){
-          oauthProvider=await new PersistentOAuthProvider(name).load();
+          oauthProvider=await new PersistentOAuthProvider(name).load();oauthProvider.onAuthUrl=onAuthUrl;
           await oauthProvider.startCallback();
           opts.authProvider=oauthProvider;
         }
@@ -97,7 +100,7 @@ export class McpManager {
       throw new Error(describeMcpError(name,e,c),{cause:e});
     }finally { if(oauthProvider)await oauthProvider.close(); }
   }
-  async authenticate(name){const x=await this.connect(name,{interactive:true});return {connected:!!x,name};}
+  async authenticate(name,opts={}){const x=await this.connect(name,{interactive:true,onAuthUrl:opts.onAuthUrl});return {connected:!!x,name};}
   async logout(name){const x=this.clients.get(name);if(x){try{await x.client.close();}catch{}this.clients.delete(name);}const p=await new PersistentOAuthProvider(name).load();await p.clear();return true;}
   async tools(name) { const c=expandEnv(this.configs[name]||{});if(c.type==='cli')return[];try{const {client}=await this.connect(name);const r=await client.listTools();return r.tools||[];}catch(e){throw new Error(describeMcpError(name,e,c),{cause:e});} }
   async call(name, toolName, args) { const c=expandEnv(this.configs[name]||{});if(c.type==='cli')throw new Error(`${name} uses a native CLI bridge, not MCP tools.`);try{const {client}=await this.connect(name);return await client.callTool({name:toolName,arguments:args||{}});}catch(e){this.clients.delete(name);throw new Error(describeMcpError(name,e,c),{cause:e});} }

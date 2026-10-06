@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.17
+
+Released: 2026-10-06.
+
+- Fixed `/connect supabase` failing on repeat connects. The OAuth loopback callback used a new random port every time, but Supabase's dynamic client registration pins `redirect_uris` (including the port) to the first attempt, so the cached registration no longer matched the authorization request. The callback now prefers a stable port (`47831`, override with `CRAFTCODE_OAUTH_PORT`, `0` for ephemeral) and falls back to a random port if it is busy.
+- Cached OAuth client registrations whose `redirect_uris` do not include the current callback URL are now ignored, which makes the MCP SDK re-register automatically instead of sending a mismatched `redirect_uri`.
+- The authorization URL is now printed in the connector notice, so `/connect` still works over SSH, in containers or when no browser can be launched.
+- The MCP client now reports the real Craft Code version instead of a hard-coded `0.9.5`.
+- Security: file tools, `@file` references and the tool cache now share one `safePath` that also resolves symlinks, so a link inside the workspace can no longer reach files outside it.
+- Security: `web_fetch` now blocks link-local/metadata (`169.254.x.x`), CGNAT, IPv6 private and IPv4-mapped addresses, `.local`/`.internal` names and hostnames that resolve to private addresses, and validates every redirect hop (max 5) instead of following redirects blindly. Its user agent now carries the real version.
+- Added regression tests for stable callback ports, stale registrations, auth URL surfacing, symlink escapes and SSRF/redirect handling.
+
 ## 0.14.16
 
 Released: 2026-10-06.
