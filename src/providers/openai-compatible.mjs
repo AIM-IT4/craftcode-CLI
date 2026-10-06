@@ -47,7 +47,8 @@ export class OpenAICompatibleClient{
   captureRateLimits(r){const num=k=>{const v=Number(r.headers.get(k));return Number.isFinite(v)&&v>=0?v:null;};this.rateLimits={rpmLimit:num('x-ratelimit-limit'),rpmRemaining:num('x-ratelimit-remaining'),tpmLimit:num('x-ratelimit-limit-tokens'),tpmRemaining:num('x-ratelimit-remaining-tokens'),reset:r.headers.get('x-ratelimit-reset-tokens')||r.headers.get('x-ratelimit-reset')||null};}
   planHint(){return null;}
   rateProfile(){return{...this.rateLimits,inFlightEstimatedTokens:this.inFlightEstimatedTokens};}
-  capabilities(model){const m=typeof model==='string'?this.modelMeta.get(model):model;const detected=imageGenerationFromMeta(m),configured=this.imageGeneration===true?true:this.imageGeneration===false?false:detected;return{...unknownCaps(),imageGeneration:this.imageModel?true:configured,contextWindow:Number(m?.context_length||m?.context_window)||null};}
+  imageModelFor(model=''){if(this.imageModel)return this.imageModel;const selected=typeof model==='string'?this.modelMeta.get(model):model;if(imageGenerationFromMeta(selected)===true)return selected?.id||selected?.name||String(model||'');for(const [id,m] of this.modelMeta)if(imageGenerationFromMeta(m)===true)return id;return'';}
+  capabilities(model){const m=typeof model==='string'?this.modelMeta.get(model):model,detected=imageGenerationFromMeta(m),catalogImage=!!this.imageModelFor(model),configured=this.imageGeneration===true?true:this.imageGeneration===false?false:(detected===true||catalogImage?true:detected);return{...unknownCaps(),imageGeneration:configured,imageModel:this.imageModelFor(model)||null,contextWindow:Number(m?.context_length||m?.context_window)||null};}
   async models({signal}={}){const r=await fetch(`${this.baseUrl}/models`,{headers:this.headers(),signal});this.captureRateLimits(r);if(!r.ok){const d=await r.text();if(r.status===401)throw new Error(`${this.label} authentication failed (401). Check the provider API key.`);throw new Error(`${this.label} models API ${r.status}: ${d}`);}const j=await r.json(),models=j.data||j.models||[];this.modelMeta=new Map(models.map(m=>[m.id||m.name,m]).filter(([id])=>id));return models;}
   _resetDelayMs(){return resetMsFromValue(this.rateLimits.reset);}
   _refreshWindowIfElapsed(){const d=this._resetDelayMs();if(d===0&&this.rateLimits.tpmLimit){this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;if(this.rateLimits.rpmLimit)this.rateLimits.rpmRemaining=this.rateLimits.rpmLimit;}}
@@ -60,8 +61,8 @@ export class OpenAICompatibleClient{
     this.inFlightEstimatedTokens+=estimated;let released=false;return()=>{if(released)return;released=true;this.inFlightEstimatedTokens=Math.max(0,this.inFlightEstimatedTokens-estimated);};
   }
   async generateImage({model,prompt,size='1024x1024',quality='',background='',signal}={}){
-    const chosen=this.imageModel||model;if(!chosen)throw new Error(this.label+' image generation requires a model.');
-    if(!this.imageModel&&this.capabilities(chosen).imageGeneration!==true)throw new Error(this.label+' model '+chosen+' does not advertise image-generation support.');
+    const chosen=this.imageModelFor(model);if(!chosen)throw new Error(this.label+' API catalog does not advertise an image-generation model.');
+    if(this.imageGeneration===false)throw new Error(this.label+' image generation is disabled by provider configuration.');
     const endpoint=this.imageEndpoint.startsWith('/')?this.imageEndpoint:'/'+this.imageEndpoint;
     const base={model:chosen,prompt:String(prompt||''),n:1,size:String(size||'1024x1024')};if(!base.prompt.trim())throw new Error('Image prompt is required.');
     if(quality)base.quality=quality;if(background)base.background=background;
