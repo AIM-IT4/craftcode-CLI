@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.19
+
+Released: 2026-10-06.
+
+- `/usage detail` now appears in the slash-command palette next to `/usage` (typing `/usa` lists both), so the session token/cache/latency summary added in 0.14.18 is discoverable instead of hidden behind an undocumented argument.
+
 ## 0.14.18
 
 Released: 2026-10-06.

@@ -64,6 +64,7 @@ const COMMANDS=[
   {cmd:'/models',desc:'Browse models from active provider'},
   {cmd:'/effort',desc:'Set agent depth: Low / Normal / High'},
   {cmd:'/usage',desc:'Open token usage dashboard'},
+  {cmd:'/usage detail',desc:'Session tokens: input / output / cached, cache hits, response times'},
   {cmd:'/permissions',desc:'Command/file permissions: Ask / Edit / Auto / Read-only'},
   {cmd:'/skills',desc:'Show discovered skills'},
   {cmd:'/plugins',desc:'Show plugins'},

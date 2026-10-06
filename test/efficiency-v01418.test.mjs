@@ -5,6 +5,7 @@ import {optimizeRequestMessages} from '../src/efficiency.mjs';
 import {mutationPaths,docsOnlyMutation} from '../src/agent.mjs';
 import {OpenAICompatibleClient} from '../src/providers/openai-compatible.mjs';
 import {UsageTracker} from '../src/usage.mjs';
+import {TerminalTui} from '../src/tui.mjs';
 
 const sse=chunks=>new Response(new ReadableStream({start(c){const enc=new TextEncoder();for(const x of chunks)c.enqueue(enc.encode(`data: ${typeof x==='string'?x:JSON.stringify(x)}\n\n`));c.close();}}),{status:200,headers:{'content-type':'text/event-stream'}});
 const reply=(text='hi',usage={prompt_tokens:100,completion_tokens:5,total_tokens:105,prompt_tokens_details:{cached_tokens:80}})=>sse([{choices:[{delta:{content:text}}]},{choices:[{delta:{},finish_reason:'stop'}],usage},'[DONE]']);
@@ -82,4 +83,12 @@ test('usage tracker records input/output/cached tokens and timing per session',a
   const d=u.snapshot().detail;
   assert.deepEqual([d.requests,d.prompt,d.completion,d.cached],[2,1500,70,900]);
   assert.equal(d.timed,2);assert.equal(d.totalMs,2400);assert.equal(u.snapshot().session,1570);
+});
+
+test('command palette lists /usage detail next to /usage so it is discoverable',()=>{
+  const u={snapshot:()=>({plan:1e6,total:0,session:0,daily:{},byModel:{}}),planTokens:1e6};
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:u,showSplash:false});tui.schedule=()=>{};
+  tui.input='/usa';tui.cursor=4;
+  const cmds=tui.commandSuggestions().map(x=>x.cmd);
+  assert.deepEqual(cmds.slice(0,2),['/usage','/usage detail']);
 });
