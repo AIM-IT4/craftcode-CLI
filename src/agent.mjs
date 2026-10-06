@@ -2,13 +2,14 @@ import {compactConversation,estimateTokens,repairConversation} from './context.m
 import {ProofTracker,failedResult} from './proof.mjs';
 import {FlightRecorder} from './flight_recorder.mjs';
 import {ToolEvidenceLedger,optimizeRequestMessages,outputBudgetForTask} from './efficiency.mjs';
+import {classifyMediaIntent} from './media_intent.mjs';
 
 function systemPrompt({cwd,mode,effort='high',skills,plugins,mcp,pluginContext=[],projectInstructions=[],autoSkills=[]}){const skillList=skills.list().slice(0,24).map(s=>s.name).join(', '),autoSkillText=(autoSkills||[]).map(s=>`--- ${s.name} [auto-selected · ~${s.promptEstimatedTokens||s.estimatedTokens||0} tokens] ---\n${s.promptContent||s.content}`).join('\n\n'),pluginList=plugins.list().map(p=>`${p.name}${p.active?' (active)':''}: ${p.description||''}`).join('\n'),mcpList=mcp.list().map(s=>`${s.name} (${s.type})`).join(', ');return`You are Craft Code, a precise general coding and research agent working in ${cwd}.
 Mode: ${mode}. Agent depth: ${effort}. In PLAN mode do not modify files or execute shell commands. In BUILD mode make focused changes and verify them. At low depth, minimize exploration and tool loops. At normal depth, balance speed and verification. At high depth, verify assumptions and important changes carefully without becoming verbose.
 For non-trivial work, maintain a short progress list with update_todo. Mark exactly one item in_progress at a time where practical, and complete items as work finishes.
 Token discipline is mandatory: for an unfamiliar codebase start with repo_map; for JavaScript/TypeScript symbol, definition, or reference questions prefer semantic_code before text search. Use search_files for text evidence and read_many_files when several known files are needed. Before guessing test/lint/typecheck/build commands, use discover_project_commands. Use process_start/process_logs/process_status for dev servers or other long-running commands instead of forcing them through run_command timeouts. When genuinely dependent read-only investigations benefit from multiple agents, prefer orchestrate_task so a planner can schedule workers and a reviewer can reconcile their evidence. When independent read-only tool calls are needed, issue them together in one response so Craft Code can execute them in parallel. Never scan the entire repository without need; avoid rereading unchanged files; keep command output and explanations concise. Prefer apply_patch for localized multi-line edits, replace_in_file for tiny exact substitutions, and write_file only for new/small files; do not rewrite a large existing file just to change a small region. In BUILD mode, after edits inspect the diff and run the most focused available verification before finalizing; if verification cannot run, state why. When the user supplies a public URL, use fetch_url instead of guessing. For a public github.com repository URL, start with inspect_repo_url and use read_repo_file only for files relevant to the question. Parallel subagents may independently inspect URLs/repositories when that reduces latency.
 Skills are token-routed automatically from the user's task. Do not ask the user to type a skill command. Auto-selected skill content, when relevant, appears below. Use list_skills/load_skill only if the automatic router missed something genuinely necessary. Compact skill catalog: ${skillList||'(none)'}\n${autoSkillText?`\nAuto-selected skills:\n${autoSkillText}`:''}
-Plugins are lazy: ${pluginList||'(none)'}. Connectors are lazy: ${mcpList||'(none)'}. Never load every MCP tool schema; inspect only the connector needed for the task. Vercel account authorization is initiated by /connect vercel through the official OAuth device/browser flow using a transient npx invocation, so do not tell the user to install a global Vercel CLI. After connection, use vercel_api for REST reads/writes or run_command with the Vercel CLI bridge for first-class commands.
+Plugins are lazy: ${pluginList||'(none)'}. Connectors are lazy: ${mcpList||'(none)'}. Never load every MCP tool schema; inspect only the connector needed for the task. Vercel account authorization is initiated by /connect vercel through the official OAuth device/browser flow using a transient npx invocation, so do not tell the user to install a global Vercel CLI. After connection, use vercel_api for REST reads/writes or run_command with the Vercel CLI bridge for first-class commands. For a direct image-creation request, use generate_image immediately when available. Never create an image-generation Python/JS script, install graphics libraries, or modify project source as a fallback unless the user explicitly asks to build image-generation code. If image generation is unavailable, say so plainly and leave the workspace unchanged.
 ${Array.isArray(projectInstructions)&&projectInstructions.length?`\nProject instructions (authoritative for this workspace):\n${projectInstructions.map(x=>`--- ${x.file} ---\n${x.text}`).join('\n')}`:''}${Array.isArray(pluginContext)&&pluginContext.length?`\nActive plugin lifecycle context:\n${pluginContext.join('\n')}`:''}\nWhen finished, default to a compact result: changed files, verification, and unresolved risks only. Stay under about 120 words unless the user explicitly asks for detail. Do not restate code already present in the applied diff. Never claim a command/test ran unless its tool result confirms it.`;}
 const estChars=m=>m.reduce((n,x)=>n+JSON.stringify(x).length,0);
 const fmtContextTokens=n=>n>=1000?`${(n/1000).toFixed(n>=10000?0:1)}k`:String(Math.max(0,Math.round(n)));
@@ -42,7 +43,8 @@ export class AgentSession{
   this.controller=new AbortController();
   const signal=this.controller.signal;
   if(!this.messages.length)this.rebuildSystem();
-  await this.routeSkills(userText);
+  const mediaIntent=classifyMediaIntent(userText),directImageIntent=mediaIntent.directImage;
+  if(directImageIntent){this.autoSkills=[];this.rebuildSystem();}else await this.routeSkills(userText);
   this.messages.push({role:'user',content:userText});
   this.trace('turn.start',{promptHash:FlightRecorder.hash(userText)});
   this.emitContext();
@@ -59,6 +61,15 @@ export class AgentSession{
   const outputPlan=outputBudgetForTask({text:userText,mode:this.mode,effort:this.effort,maxOutputTokens:this.client.maxOutputTokens||this.config.maxOutputTokens||8192,config:this.config.efficiency||{}});this.lastOutputPlan=outputPlan;
 
   this.events.onTurnStart?.({goal:userText,mode:this.mode,effort:this.effort});
+  const imageAvailable=!!this.tools.imageSupported?.();
+  if(directImageIntent&&this.mode!=='build'){
+    const text='Image generation requires Build mode. I did not modify the workspace or create a fallback script.';
+    this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'blocked',proof:proofReport});return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
+  }
+  if(directImageIntent&&!imageAvailable){
+    const text='The active provider/model does not advertise image-generation capability. I did not search the repository, create Python/JS helpers, install libraries, or modify project files. Switch to an image-capable model/provider or ask explicitly if you want image-generation code.';
+    this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'unsupported-image',proof:proofReport});return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
+  }
   if(this.mode==='build'&&this.checkpoints)await this.checkpoints.begin(String(userText).slice(0,80));
 
   const parseArgs=call=>{try{return JSON.parse(call.function.arguments||'{}');}catch{return{_raw:call.function.arguments};}};
@@ -73,7 +84,7 @@ export class AgentSession{
     catch(e){if(e.name==='AbortError')throw e;result={error:String(e.message||e)};}
     const content=typeof result==='string'?result:JSON.stringify(result);
     const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
-    if(isMutating&&!toolFailed)mutated=true;
+    if(isMutating&&!toolFailed&&name!=='generate_image')mutated=true;
     if(isVerification&&!toolFailed)verified=true;
     proof.tool({name,args,result:content,error:toolError,mutating:isMutating&&!toolFailed});
     const reduced=this.evidenceLedger.reduce(name,args,content),durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length,contextChars:reduced.content.length,duplicate:!!reduced.duplicate});
@@ -94,7 +105,7 @@ export class AgentSession{
       if(segment>0)this.events.onWarn?.(`Long turn · continuing automatically (${segments}/${segmentLimit})…`);
 
       for(let step=0;step<stepLimit;step++){
-        const toolDefs=this.tools.definitions(this.mode);
+        const allToolDefs=this.tools.definitions(this.mode),toolDefs=directImageIntent?allToolDefs.filter(x=>x?.function?.name==='generate_image'):allToolDefs;
         this.autoCompact(toolDefs,'auto',false);
         this.repairContext();
         if(signal.aborted)throw new DOMException('Aborted','AbortError');
