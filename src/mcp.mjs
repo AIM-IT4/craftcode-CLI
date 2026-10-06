@@ -27,6 +27,7 @@ export function describeMcpError(name,error,config={}){
     if(config.command==='docker')return `${label} connector stopped during startup. Make sure Docker Desktop is installed and running, then retry \`/connect ${label}\`.`;
     return `${label} connector closed the connection during startup. Retry \`/connect ${label}\`; if it persists, check the server URL and authentication.`;
   }
+  if(/client_id.*undefined|redirect_uri.*undefined|client registration returned no client_id/i.test(message))return `${label} connector OAuth registration is incomplete. Craft Code discards invalid cached OAuth client data automatically; retry \`/connect ${label}\`.`;
   if(config.authHint&&/requires a token|authentication|unauthor|forbidden|401|403/i.test(message))return `${label} connector: ${config.authHint}`;
   if(/unauthor|forbidden|401|403/i.test(message))return `${label} connector authentication was rejected. Run \`/disconnect ${label}\` and then \`/connect ${label}\` to authorize again.`;
   return `${label} connector failed: ${message}`;
