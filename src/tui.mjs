@@ -489,7 +489,7 @@ export class TerminalTui{
     this.paintFrame(out.slice(0,rows),cols);
   }
   paintFrame(lines,cols){
-    const safeCols=Math.max(1,cols-2);const normalized=lines.map(x=>fit(x,safeCols));
+    const safeCols=Math.max(1,cols-1);const normalized=lines.map(x=>fit(x,safeCols));
     let buf=`${CSI}?25l`;
     if(!this.prevLines.length){buf+=`${CSI}2J`;}
     const max=Math.max(this.prevLines.length,normalized.length);
