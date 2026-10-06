@@ -11,7 +11,7 @@ export class ProviderRegistry{
   get(id=this.activeId()){const x=this.config.providers?.[id];if(!x)throw new Error(`Unknown provider: ${id}`);return{id,...x,label:x.label||LABELS[x.type]||x.label||id};}
   list(){return Object.keys(this.config.providers||{}).map(id=>this.get(id));}
   create(id=this.activeId(),{apiKey='',onRateLimit=null,maxOutputTokens=this.config.maxOutputTokens||8192}={}){
-    const p=this.get(id),base={apiKey:p.auth===false?'':apiKey,baseUrl:p.baseUrl,maxOutputTokens,onRateLimit};
+    const p=this.get(id),base={apiKey:p.auth===false?'':apiKey,baseUrl:p.baseUrl,maxOutputTokens,onRateLimit,imageGeneration:p.imageGeneration??'auto',imageEndpoint:p.imageEndpoint||'/images/generations',imageModel:p.imageModel||''};
     if(p.type==='codecraft')return new CodeCraftClient(base);
     if(p.type==='openrouter')return new OpenRouterClient({...base,appUrl:p.appUrl,appName:p.appName});
     if(p.type==='openai-compatible')return new OpenAICompatibleClient({...base,id,label:p.label||id,extraHeaders:p.headers||{}});
