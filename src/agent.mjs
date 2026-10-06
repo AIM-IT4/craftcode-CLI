@@ -49,7 +49,7 @@ export class AgentSession{
   if(estChars(this.messages)>this.compactLimit())this.autoCompact([],'auto',false);
 
   let finalText='',totalThisTurn=0;
-  let mutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false;
+  let mutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false,lastToolName='',lastToolFailed=false;
   const proof=new ProofTracker({goal:userText,mode:this.mode});
   let lastBatchFingerprint='',repeatBatchCount=0;
   const runtime=this.config.agentRuntime||{};
@@ -58,7 +58,7 @@ export class AgentSession{
   const autoVerify=runtime.autoVerifyEdits!==false;
   const outputPlan=outputBudgetForTask({text:userText,mode:this.mode,effort:this.effort,maxOutputTokens:this.client.maxOutputTokens||this.config.maxOutputTokens||8192,config:this.config.efficiency||{}});this.lastOutputPlan=outputPlan;
 
-  this.events.onTurnStart?.();
+  this.events.onTurnStart?.({goal:userText,mode:this.mode,effort:this.effort});
   if(this.mode==='build'&&this.checkpoints)await this.checkpoints.begin(String(userText).slice(0,80));
 
   const parseArgs=call=>{try{return JSON.parse(call.function.arguments||'{}');}catch{return{_raw:call.function.arguments};}};
@@ -77,7 +77,8 @@ export class AgentSession{
     if(isVerification&&!toolFailed)verified=true;
     proof.tool({name,args,result:content,error:toolError,mutating:isMutating&&!toolFailed});
     const reduced=this.evidenceLedger.reduce(name,args,content),durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length,contextChars:reduced.content.length,duplicate:!!reduced.duplicate});
-    this.events.onToolEnd?.({cardId,name,args,result:content,durationMs,error:toolError});
+    lastToolName=name;lastToolFailed=toolFailed;
+    this.events.onToolEnd?.({cardId,name,args,result:content,durationMs,error:toolError,failed:toolFailed,mutated,verified,browserRequired:proof.browserRequired,browserVerified:proof.browserVerified});
     return{call,content:reduced.content,name,args};
   };
 
@@ -97,7 +98,7 @@ export class AgentSession{
         this.autoCompact(toolDefs,'auto',false);
         this.repairContext();
         if(signal.aborted)throw new DOMException('Aborted','AbortError');
-        this.events.onThinking?.({step:segment*stepLimit+step});
+        this.events.onThinking?.({goal:userText,step:segment*stepLimit+step,segment,mode:this.mode,mutated,verified,browserRequired:proof.browserRequired,browserVerified:proof.browserVerified,verificationPrompted,lastToolName,lastToolFailed});
         this.trace('model.request',{step:segment*stepLimit+step,model:this.model});
 
         let res,contextRetried=false,sequenceRetried=false;
