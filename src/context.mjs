@@ -66,6 +66,26 @@ function trimToolOutputs(messages,keepTail=6,maxChars=3500){
   });
 }
 
+const PIN_MUTATIONS=new Set(['apply_patch','replace_in_file','write_file','delete_file','move_file','make_directory','generate_image']);
+const VERIFY_CMD=/(?:^|\s)(?:test|tests|lint|typecheck|check|build|pytest|vitest|jest|cargo\s+test|go\s+test|mvn\s+test|gradle\s+test)(?:\s|$)/i;
+function callArgs(call){try{return JSON.parse(call?.function?.arguments||'{}');}catch{return{};}}
+function patchTargets(p=''){return[...String(p||'').matchAll(/^\+\+\+\s+(?:b\/)?([^\t\r\n]+)/gm)].map(m=>m[1]).filter(x=>x&&x!=='/dev/null').slice(0,8);}
+function extractPinnedEvidence(messages,maxChars=4600){
+  const rows=[],seen=new Set(),calls=new Map(),push=x=>{x=String(x||'').replace(/\s+/g,' ').trim();if(!x||seen.has(x))return;seen.add(x);rows.push(x);};
+  const genuineUsers=(messages||[]).filter(m=>m?.role==='user'&&typeof m.content==='string'&&!/^\[Craft Code /.test(m.content.trim())).slice(-4);
+  for(const m of genuineUsers)push('Requirement: '+clip(m.content,620));
+  for(const m of messages||[]){
+    if(m?.role==='assistant'&&Array.isArray(m.tool_calls))for(const c of m.tool_calls||[]){calls.set(String(c.id||''),c);const n=String(c?.function?.name||''),a=callArgs(c);if(PIN_MUTATIONS.has(n)){const targets=n==='apply_patch'?patchTargets(a.patch):[a.path||a.from||a.to].filter(Boolean);if(targets.length)push('Changed: '+targets.join(', '));}}
+    if(m?.role==='tool'){
+      const c=calls.get(String(m.tool_call_id||'')),n=String(c?.function?.name||''),a=callArgs(c),body=String(m.content||''),failed=/\(exit\s+[1-9]\d*\)|\b(error|failed|failure|exception|fatal|not ok)\b/i.test(body);
+      if(n==='run_command'&&VERIFY_CMD.test(String(a.command||'')))push((failed?'Verification failed: ':'Verification passed: ')+clip(a.command,300)+(failed?' · '+clip(body,500):''));
+      if(n==='call_mcp_tool'&&String(a.server||'').toLowerCase()==='playwright'&&/(snapshot|screenshot)/i.test(String(a.tool||''))&&!failed)push('Browser verification captured: '+String(a.tool||'snapshot'));
+      if(failed&&n!=='run_command')push('Tool failure: '+n+' · '+clip(body,420));
+    }
+  }
+  return clip(rows.join('\n'),maxChars);
+}
+
 function compactCandidate(base,keepTurns){
   const firstSystem=base[0]?.role==='system'?base[0]:null;
   const start=firstSystem?1:0,userIndexes=[];
@@ -78,7 +98,8 @@ function compactCandidate(base,keepTurns){
     .filter(Boolean)
     .slice(-10)
     .join('\n');
-  const summary=older?{role:'system',content:`Earlier conversation was locally compacted to preserve session continuity. Salient excerpts:\n${older}`}:null;
+  const pinned=extractPinnedEvidence(base),parts=[];if(pinned)parts.push('Pinned evidence (preserve exactly in subsequent reasoning):\n'+pinned);if(older)parts.push('Salient older excerpts:\n'+older);
+  const summary=parts.length?{role:'system',content:'Earlier conversation was locally compacted to preserve session continuity.\n'+parts.join('\n\n')}:null;
   return[...(firstSystem?[firstSystem]:[]),...(summary?[summary]:[]),...base.slice(cut)];
 }
 
