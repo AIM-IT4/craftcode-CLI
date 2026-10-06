@@ -119,11 +119,21 @@ test('assistant markdown does not print raw bold markers',()=>{
   assert.equal(rendered.includes('**'),false);assert.match(rendered,/Synced/);assert.match(rendered,/Before:/);
 });
 
-import { PersistentOAuthProvider } from '../src/oauth.mjs';
+import { PersistentOAuthProvider,browserOpenCommand } from '../src/oauth.mjs';
 import { PluginRegistry } from '../src/plugins.mjs';
 import { SkillRegistry } from '../src/skills.mjs';
 import { AgentManager } from '../src/agents.mjs';
 import { McpManager } from '../src/mcp.mjs';
+
+test('Windows OAuth browser launcher preserves Supabase authorization query intact',()=>{
+  const url='https://api.supabase.com/v1/oauth/authorize?response_type=code&client_id=abc-123&redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2Foauth%2Fcallback&state=s&code_challenge=c';
+  const x=browserOpenCommand(url,'win32');
+  assert.equal(x.command,'rundll32.exe');
+  assert.deepEqual(x.args,['url.dll,FileProtocolHandler',url]);
+  assert.match(x.args[1],/&client_id=abc-123&/);
+  assert.match(x.args[1],/&redirect_uri=http%3A%2F%2F127\.0\.0\.1/);
+  assert.equal(x.args.some(a=>a==='cmd'||a==='/c'||a==='start'),false);
+});
 
 test('OAuth loopback callback captures authorization code', async()=>{
   const name='test-'+Math.random().toString(36).slice(2);const p=await new PersistentOAuthProvider(name).load();
@@ -691,7 +701,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.14\.14/);
+  assert.match(stdout,/Craft Code 0\.14\.15/);
   assert.match(stdout,/Provider:/);
 });
 
