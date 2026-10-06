@@ -77,18 +77,35 @@ const table=(rows,cols)=>rows.map(r=>cols.map(([k,w])=>String(r[k]??'').slice(0,
 const day=()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 async function vercelBrowserLogin(cwd,tui){
   let who=await captureVercel(['whoami'],cwd);
-  if(who.code===0&&who.stdout.trim())return who.stdout.trim();
-  tui.stop();
+  if(who.code===0&&who.stdout.trim())return{user:who.stdout.trim(),alreadyConnected:true};
+  const controller=new AbortController();
+  let approvalUrl='',latest='Waiting for Vercel to emit the browser approval link…';
+  const clean=x=>String(x||'').replace(/\x1b\[[0-9;?]*[ -\\/]*[@-~]/g,'').replace(/\r/g,'');
+  const render=()=>{
+    const link=approvalUrl?'Approval URL\n'+approvalUrl+'\n\n':'';
+    tui.updateAuth(link+'Status\n'+latest+'\n\nCraft Code will try to open the approval URL automatically. Press Esc or Q to cancel.');
+  };
+  tui.openAuth('Connect Vercel','Starting official Vercel OAuth device flow…\n\nPress Esc or Q to cancel.',()=>controller.abort());
   try{
-    console.log('\nCraft Code → Vercel browser approval');
-    console.log('Starting the official Vercel OAuth device flow. Craft Code will print the approval URL and try to open it in your default browser. No global Vercel CLI installation is required.\n');
-    await loginVercel(cwd);
-  }finally{tui.start();}
+    await loginVercel(cwd,{
+      signal:controller.signal,
+      onUrl:url=>{approvalUrl=url;latest='Approval link detected. Complete approval in your browser…';render();},
+      onOutput:(_chunk,combined)=>{
+        const lines=clean(combined).split('\n').map(x=>x.trim()).filter(Boolean).slice(-12);
+        if(lines.length)latest=lines.join('\n');
+        render();
+      }
+    });
+    if(tui.modal?.type==='auth')tui.closeModal('done');
+  }catch(e){
+    if(tui.modal?.type==='auth')tui.closeModal(null);
+    if(e?.name==='AbortError')return{cancelled:true};
+    throw e;
+  }
   who=await captureVercel(['whoami'],cwd);
   if(who.code!==0||!who.stdout.trim())throw new Error('Vercel browser approval finished, but the account could not be verified with vercel whoami. '+String(who.stderr||'').trim());
-  return who.stdout.trim();
+  return{user:who.stdout.trim(),approvalUrl};
 }
-
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
@@ -294,10 +311,11 @@ async function main(){
         if(name==='vercel'){
           tui.setNotice('Opening Vercel browser approval…',0);
           try{
-            const user=await vercelBrowserLogin(cwd,tui);
+            const auth=await vercelBrowserLogin(cwd,tui);
+            if(auth?.cancelled){tui.setNotice('Vercel connection cancelled',1800);return;}
             tui.setNotice('Vercel connected',2200);
-            tui.add('assistant','Vercel connected as `'+user+'` through browser/device approval. No global Vercel CLI installation is required; Craft Code invokes the official client transiently with `npx`. You can now ask for projects, deployments, logs, domains, environment configuration, or REST API operations.');
-          }catch(e){tui.setNotice('Vercel not connected',2200);tui.openInfo('Vercel connection failed',`${e.message||String(e)}\n\nRetry /connect vercel. Craft Code will launch the official OAuth device flow, print the Vercel approval URL, and try to open it automatically. No global Vercel CLI install is required.`);}
+            tui.add('assistant','Vercel connected as `'+auth.user+'` through browser/device approval. No global Vercel CLI installation is required; Craft Code invokes the official client transiently with `npx`. You can now ask for projects, deployments, logs, domains, environment configuration, or REST API operations.');
+          }catch(e){tui.setNotice('Vercel not connected',2200);tui.openInfo('Vercel connection failed',`${e.message||String(e)}\n\nRetry /connect vercel. The approval flow now stays inside Craft Code; Esc cancels it, and the browser URL appears in the auth panel as soon as Vercel emits it.`);}
           return;
         }
         tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name);tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
