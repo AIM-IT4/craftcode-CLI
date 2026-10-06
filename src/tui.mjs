@@ -140,7 +140,7 @@ export class TerminalTui{
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
     this.fileSuggestionIndex=0;this.commandSelection=0;this.toolSelection=null;this.spinnerIndex=0;
     this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;this.mouseCapture=!!o.mouseCapture;
-    this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;this.selectionMode=false;
+    this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;this.selectionMode=false;this.selectionRestoreMouse=false;this.suggestionsDismissed=false;
     this._data=b=>this.handleData(String(b));this._resize=()=>{this.prevLines=[];this.render();};
   }
   start(){
@@ -166,8 +166,8 @@ export class TerminalTui{
     this.setNotice(next?'Mouse UI ON · /mouse off restores native copy':'Native selection ON · drag to select · Ctrl+C copy',2200);
     this.prevLines=[];this.render();
   }
-  enterSelectionMode(){this.setMouseCapture(false);}
-  exitSelectionMode(){/* native selection persists while mouse capture is off */}
+  enterSelectionMode(){this.selectionRestoreMouse=this.mouseCapture;this.selectionMode=true;this.setMouseCapture(false);this.setNotice('Selection mode · Esc returns to Craft Code',1800);}
+  exitSelectionMode(){if(!this.selectionMode)return;this.selectionMode=false;if(this.selectionRestoreMouse)this.setMouseCapture(true);this.selectionRestoreMouse=false;this.schedule();}
   setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
@@ -203,16 +203,26 @@ export class TerminalTui{
   openUsage(){this.modal={type:'usage',title:'Usage',resolve:()=>{}};this.schedule();}
   modalItems(){if(!this.modal?.items)return[];const q=(this.modal.filter||'').toLowerCase();return q?this.modal.items.filter(x=>`${x.label} ${x.meta||''}`.toLowerCase().includes(q)):this.modal.items;}
   closeModal(v=null){const m=this.modal;if(!m)return;this.modal=null;m.resolve?.(v);this.schedule();}
-  commandSuggestions(){if(!this.input.startsWith('/'))return[];const q=this.input.toLowerCase(),all=[...COMMANDS,...this.extraCommands];return all.filter((x,i,a)=>a.findIndex(y=>y.cmd===x.cmd)===i).filter(x=>x.cmd.toLowerCase().startsWith(q)||x.cmd.toLowerCase().includes(q.slice(1))).slice(0,10);}
+  dismissTransient(){
+    if(this.modal){this.closeModal(null);return true;}
+    if(this.approval){this.resolveApproval(false);return true;}
+    if(this.planApproval){this.resolvePlan('dismiss');return true;}
+    if(this.selectionMode){this.exitSelectionMode();return true;}
+    const hasSuggestions=!this.suggestionsDismissed&&(this.fileSuggestions().length>0||this.commandSuggestions().length>0);
+    if(hasSuggestions){this.suggestionsDismissed=true;this.fileSuggestionIndex=0;this.commandSelection=0;this.schedule();return true;}
+    if(this.toolSelection!=null){this.toolSelection=null;this.schedule();return true;}
+    return false;
+  }
+  commandSuggestions(){if(this.suggestionsDismissed||!this.input.startsWith('/'))return[];const q=this.input.toLowerCase(),all=[...COMMANDS,...this.extraCommands];return all.filter((x,i,a)=>a.findIndex(y=>y.cmd===x.cmd)===i).filter(x=>x.cmd.toLowerCase().startsWith(q)||x.cmd.toLowerCase().includes(q.slice(1))).slice(0,10);}
   fileToken(){const m=this.input.slice(0,this.cursor).match(/(?:^|\s)@([^\s]*)$/);return m?m[1]:null;}
-  fileSuggestions(){const q=this.fileToken();return q===null||!this.fileRefs?[]:this.fileRefs.suggest(q,8);}
+  fileSuggestions(){if(this.suggestionsDismissed)return[];const q=this.fileToken();return q===null||!this.fileRefs?[]:this.fileRefs.suggest(q,8);}
   insertFile(){const list=this.fileSuggestions();if(!list.length)return false;const f=list[Math.min(this.fileSuggestionIndex,list.length-1)],before=this.input.slice(0,this.cursor),m=before.match(/(?:^|\s)@([^\s]*)$/);if(!m)return false;const start=this.cursor-m[1].length;this.input=this.input.slice(0,start)+f+' '+this.input.slice(this.cursor);this.cursor=start+f.length+1;this.fileSuggestionIndex=0;this.schedule();return true;}
   enqueue(v){this.queue.push(v);this.setNotice(`Queued · ${this.queue.length}`,1600);}
   hasQueue(){return!!this.queue.length;}
   dequeue(){return this.queue.shift()||null;}
   async submit(){
     let v=this.input.trim();if(!v)return;
-    this.history.push(v);this.hist=-1;this.input='';this.cursor=0;this.commandSelection=0;
+    this.history.push(v);this.hist=-1;this.input='';this.cursor=0;this.commandSelection=0;this.suggestionsDismissed=false;
     if(v.startsWith('/')){
       v=v.replace(/^\/([^\s]+)/,(_,c)=>'/'+c.toLowerCase());
       if(this.busy){this.input=v;this.cursor=v.length;this.setNotice('Esc cancels the active turn first.',1800);return;}
@@ -267,6 +277,7 @@ export class TerminalTui{
     if(this.screen==='welcome'){
       if(s==='\x03')return this.onExit?.();if(s==='\r'||s==='\n'||s===' '){this.screen='chat';this.prevLines=[];return this.schedule();}if(s==='q'||s==='Q'||s==='\x1b')return this.onExit?.();return;
     }
+    if(s==='\x1b'&&this.dismissTransient())return;
     if(this.modal){
       if(this.modal.type==='usage'){if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();return;}
       const a=this.modalItems();if(s==='\x1b')return this.closeModal();if(s==='\r')return this.closeModal(a[this.modal.index]?.id||null);
@@ -289,8 +300,8 @@ export class TerminalTui{
       return this.submit();
     }
     if(s==='\n'){this.input=this.input.slice(0,this.cursor)+'\n'+this.input.slice(this.cursor);this.cursor++;return this.schedule();}
-    if(s==='\x7f'||s==='\b'){if(this.cursor>0){this.input=this.input.slice(0,this.cursor-1)+this.input.slice(this.cursor);this.cursor--;this.commandSelection=0;}return this.schedule();}
-    if(s==='\x1b[D'){this.cursor=Math.max(0,this.cursor-1);return this.schedule();}if(s==='\x1b[C'){this.cursor=Math.min(this.input.length,this.cursor+1);return this.schedule();}
+    if(s==='\x7f'||s==='\b'){if(this.cursor>0){this.input=this.input.slice(0,this.cursor-1)+this.input.slice(this.cursor);this.cursor--;this.commandSelection=0;this.suggestionsDismissed=false;}return this.schedule();}
+    if(s==='\x1b[D'){this.cursor=Math.max(0,this.cursor-1);this.suggestionsDismissed=false;return this.schedule();}if(s==='\x1b[C'){this.cursor=Math.min(this.input.length,this.cursor+1);this.suggestionsDismissed=false;return this.schedule();}
     const fs=this.fileSuggestions(),cs=this.commandSuggestions();
     if(fs.length&&(s==='\x1b[A'||s==='\x1b[B')){this.fileSuggestionIndex=(this.fileSuggestionIndex+(s==='\x1b[A'?-1:1)+fs.length)%fs.length;return this.schedule();}
     if(this.input.startsWith('/')&&cs.length&&(s==='\x1b[A'||s==='\x1b[B')){this.commandSelection=(this.commandSelection+(s==='\x1b[A'?-1:1)+cs.length)%cs.length;return this.schedule();}
@@ -298,8 +309,8 @@ export class TerminalTui{
     if(s==='\x0e'){if(this.hist>=0){this.hist--;this.input=this.hist<0?'':this.history[this.history.length-1-this.hist]||'';this.cursor=this.input.length;}return this.schedule();}
     if(s==='\x1b[A'){this.scrollOffset+=4;return this.schedule();}
     if(s==='\x1b[B'){this.scrollOffset=Math.max(0,this.scrollOffset-4);return this.schedule();}
-    if(s==='\t'){if(this.insertFile())return;const c=this.commandSuggestions();if(c.length){this.input=c[this.commandSelection].cmd;this.cursor=this.input.length;return this.schedule();}}
-    if(s>=' '&&!s.startsWith('\x1b')){this.input=this.input.slice(0,this.cursor)+s+this.input.slice(this.cursor);this.cursor+=s.length;this.fileSuggestionIndex=0;this.commandSelection=0;this.schedule();}
+    if(s==='\t'){this.suggestionsDismissed=false;if(this.insertFile())return;const c=this.commandSuggestions();if(c.length){this.input=c[this.commandSelection].cmd;this.cursor=this.input.length;return this.schedule();}}
+    if(s>=' '&&!s.startsWith('\x1b')){this.input=this.input.slice(0,this.cursor)+s+this.input.slice(this.cursor);this.cursor+=s.length;this.fileSuggestionIndex=0;this.commandSelection=0;this.suggestionsDismissed=false;this.schedule();}
   }
   transcriptLines(w){
     const out=[];
