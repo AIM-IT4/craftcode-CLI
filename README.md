@@ -134,7 +134,7 @@ Craft Code includes **Spark**, an original terminal mascot rendered on the lower
 /plushie off
 ```
 
-In `auto` mode Spark appears only when the terminal has enough room and hides whenever command/file suggestions, pickers, or modals need the space. Spark animates while the agent is working and changes expression for success or tool errors.
+In `auto` mode Spark appears only when the terminal has enough room. It stays anchored immediately above the composer while command/file suggestions are open when vertical space permits, and yields to pickers/modals or constrained layouts. Spark animates while the agent is working and changes expression for success or tool errors.
 
 ### Persistent sessions
 

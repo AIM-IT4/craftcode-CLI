@@ -16,6 +16,7 @@
 - `/provider` — provider picker
 - `/provider <id>` — switch provider and refresh its model catalog
 - `/model` — model picker for the active provider
+- `/models` — alias that opens the active provider's model picker
 
 CLI authentication:
 
@@ -59,6 +60,8 @@ CLI authentication:
 - `/flight show <run-id>` — inspect a recorded step timeline
 - `/replay <run-id> [step]` — fork the saved session at a replayable recorded boundary
 - `/compact` — compact older session history while preserving recent work
+- `/clear` — clear the current conversation
+- `/config` — show the global CraftCode config path
 - `/init`
 - `/instructions`
 - `/instructions reload`
@@ -71,6 +74,7 @@ CLI authentication:
 - `/plugin marketplace add <owner/repo>`
 - `/plugin install <name@marketplace>`
 - `/connect` — connector picker with Browser approval / Token / Local auth labels
+- `/disconnect <connector>` — disconnect an MCP connector
 - `/mcp`
 
 ## Git / shell
