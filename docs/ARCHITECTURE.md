@@ -51,3 +51,10 @@ Credentials are provider-scoped in `~/.craftcli/auth.json`; legacy `codecraftApi
 Saved sessions remain the source of truth for conversation content. Replay forks a saved message prefix at a recorded boundary. Context compaction increments an epoch; replay refuses boundaries from an older epoch when a later compaction means the exact prior context is no longer reconstructable.
 
 `ProofTracker` observes successful mutations and verification activity during the same turn. It does not ask the model to rate itself. Patch Arena reuses isolated writer worktrees and the same proof reports for deterministic candidate ranking. The default Arena candidate set contains only the active provider, so CodeCraft-only installations receive the full feature set.
+
+
+## Automatic capability routing
+
+The runtime keeps capability decisions deterministic where possible. Skill routing scores only local skill metadata and loads the highest-relevance skills that fit the configured count/token budget. Provider image generation is exposed only when model metadata or explicit provider configuration confirms support; image bytes bypass conversation context and are written directly to the workspace.
+
+UI/web mutations are tracked by ProofTracker. Before finalization, AgentSession injects a browser-verification gate when a changed path is classified as a UI surface. Playwright tool discovery is lazy. Read-only snapshots, screenshots, console/network inspection and localhost navigation can run automatically; state-changing interactions still use the ordinary permission layer. A git push attempted before required browser evidence is blocked inside the agent loop.

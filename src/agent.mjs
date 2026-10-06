@@ -2,20 +2,21 @@ import {compactConversation,estimateTokens,repairConversation} from './context.m
 import {ProofTracker,failedResult} from './proof.mjs';
 import {FlightRecorder} from './flight_recorder.mjs';
 
-function systemPrompt({cwd,mode,effort='high',skills,plugins,mcp,pluginContext=[],projectInstructions=[]}){const skillList=skills.list().slice(0,40).map(s=>`${s.name}: ${s.description}`).join('\n'),pluginList=plugins.list().map(p=>`${p.name}${p.active?' (active)':''}: ${p.description||''}`).join('\n'),mcpList=mcp.list().map(s=>`${s.name} (${s.type})`).join(', ');return`You are Craft Code, a precise general coding and research agent working in ${cwd}.
+function systemPrompt({cwd,mode,effort='high',skills,plugins,mcp,pluginContext=[],projectInstructions=[],autoSkills=[]}){const skillList=skills.list().slice(0,24).map(s=>s.name).join(', '),autoSkillText=(autoSkills||[]).map(s=>`--- ${s.name} [auto-selected · ~${s.estimatedTokens||0} tokens] ---\n${s.content}`).join('\n\n'),pluginList=plugins.list().map(p=>`${p.name}${p.active?' (active)':''}: ${p.description||''}`).join('\n'),mcpList=mcp.list().map(s=>`${s.name} (${s.type})`).join(', ');return`You are Craft Code, a precise general coding and research agent working in ${cwd}.
 Mode: ${mode}. Agent depth: ${effort}. In PLAN mode do not modify files or execute shell commands. In BUILD mode make focused changes and verify them. At low depth, minimize exploration and tool loops. At normal depth, balance speed and verification. At high depth, verify assumptions and important changes carefully without becoming verbose.
 For non-trivial work, maintain a short progress list with update_todo. Mark exactly one item in_progress at a time where practical, and complete items as work finishes.
 Token discipline is mandatory: for an unfamiliar codebase start with repo_map; for JavaScript/TypeScript symbol, definition, or reference questions prefer semantic_code before text search. Use search_files for text evidence and read_many_files when several known files are needed. Before guessing test/lint/typecheck/build commands, use discover_project_commands. Use process_start/process_logs/process_status for dev servers or other long-running commands instead of forcing them through run_command timeouts. When genuinely dependent read-only investigations benefit from multiple agents, prefer orchestrate_task so a planner can schedule workers and a reviewer can reconcile their evidence. When independent read-only tool calls are needed, issue them together in one response so Craft Code can execute them in parallel. Never scan the entire repository without need; avoid rereading unchanged files; keep command output and explanations concise. Prefer replace_in_file to whole-file rewrites. In BUILD mode, after edits inspect the diff and run the most focused available verification before finalizing; if verification cannot run, state why. When the user supplies a public URL, use fetch_url instead of guessing. For a public github.com repository URL, start with inspect_repo_url and use read_repo_file only for files relevant to the question. Parallel subagents may independently inspect URLs/repositories when that reduces latency.
-Skills are lazy. Use list_skills/load_skill only when relevant. Available skill summaries:\n${skillList||'(none)'}
+Skills are token-routed automatically from the user's task. Do not ask the user to type a skill command. Auto-selected skill content, when relevant, appears below. Use list_skills/load_skill only if the automatic router missed something genuinely necessary. Compact skill catalog: ${skillList||'(none)'}\n${autoSkillText?`\nAuto-selected skills:\n${autoSkillText}`:''}
 Plugins are lazy: ${pluginList||'(none)'}. Connectors are lazy: ${mcpList||'(none)'}. Never load every MCP tool schema; inspect only the connector needed for the task. Vercel account authorization is initiated by /connect vercel through the official OAuth device/browser flow using a transient npx invocation, so do not tell the user to install a global Vercel CLI. After connection, use vercel_api for REST reads/writes or run_command with the Vercel CLI bridge for first-class commands.
 ${Array.isArray(projectInstructions)&&projectInstructions.length?`\nProject instructions (authoritative for this workspace):\n${projectInstructions.map(x=>`--- ${x.file} ---\n${x.text}`).join('\n')}`:''}${Array.isArray(pluginContext)&&pluginContext.length?`\nActive plugin lifecycle context:\n${pluginContext.join('\n')}`:''}\nWhen finished, summarize files changed, verification performed, and unresolved risks. Never claim a command/test ran unless its tool result confirms it.`;}
 const estChars=m=>m.reduce((n,x)=>n+JSON.stringify(x).length,0);
 const fmtContextTokens=n=>n>=1000?`${(n/1000).toFixed(n>=10000?0:1)}k`:String(Math.max(0,Math.round(n)));
 const detail=a=>a?.path||a?.server||a?.command?.slice(0,90)||a?.name||a?.query||'';
 export class AgentSession{
- constructor({client,model,cwd,mode='build',effort='high',config,usage,skills,plugins,mcp,tools,checkpoints=null,events={},turnTokenBudget=0,projectInstructions=[]}){Object.assign(this,{client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,turnTokenBudget,projectInstructions});this.messages=[];this.pluginContext=[];this.lastUsage=null;this.lastProof=null;this.controller=null;this.running=false;this.traceEpoch=0;}
+ constructor({client,model,cwd,mode='build',effort='high',config,usage,skills,plugins,mcp,tools,checkpoints=null,events={},turnTokenBudget=0,projectInstructions=[]}){Object.assign(this,{client,model,cwd,mode,effort,config,usage,skills,plugins,mcp,tools,checkpoints,events,turnTokenBudget,projectInstructions});this.messages=[];this.pluginContext=[];this.autoSkills=[];this.lastUsage=null;this.lastProof=null;this.controller=null;this.running=false;this.traceEpoch=0;}
  trace(type,data={}){this.events.onTrace?.({type,messageCount:this.messages.length,epoch:this.traceEpoch,...data});}
  setPluginContext(x=[]){this.pluginContext=(x||[]).filter(Boolean).slice(-12);this.rebuildSystem();} setProjectInstructions(x=[]){this.projectInstructions=x||[];this.rebuildSystem();}
+ async routeSkills(query){const cfg=this.config.skills||{};if(cfg.autoLoad===false||!this.skills?.autoSelect){this.autoSkills=[];this.rebuildSystem();return[];}const r=await this.skills.autoSelect(query,{maxSkills:Math.max(0,Math.min(4,Number(cfg.maxAutoSkills??2))),maxTokens:Math.max(0,Number(cfg.autoLoadMaxTokens??8000)),minScore:Math.max(0,Number(cfg.minAutoScore??2))});this.autoSkills=r.selected||[];this.rebuildSystem();if(this.autoSkills.length)this.events.onAutoSkills?.({names:this.autoSkills.map(x=>x.name),estimatedTokens:r.estimatedTokens||0,candidates:r.candidates||0});return this.autoSkills;}
  contextWindow(){return Number(this.client.capabilities?.(this.model)?.contextWindow)||0;}
  contextBudget(tools=[]){const window=this.contextWindow();if(!window)return null;const toolTokens=estimateTokens(tools||[]),configuredOutput=Number(this.client.maxOutputTokens||this.config.maxOutputTokens||8192),outputReserve=Math.min(configuredOutput,Math.max(1024,Math.floor(window*.25))),safety=Math.max(1024,Math.floor(window*.05)),maxMessageTokens=Math.max(1024,window-toolTokens-outputReserve-safety);return{window,toolTokens,outputReserve,safety,triggerTokens:Math.max(1024,Math.floor(maxMessageTokens*.82)),targetTokens:Math.max(768,Math.floor(maxMessageTokens*.62))};}
  compactLimit(tools=[]){let limit=this.config.autoCompactChars||500_000,tpm=this.client.rateLimits?.tpmLimit;if(tpm)limit=Math.min(limit,Math.max(100_000,Math.floor(tpm*.6)));const budget=this.contextBudget(tools);if(budget)limit=Math.min(limit,budget.triggerTokens*4);return limit;}
@@ -40,13 +41,14 @@ export class AgentSession{
   this.controller=new AbortController();
   const signal=this.controller.signal;
   if(!this.messages.length)this.rebuildSystem();
+  await this.routeSkills(userText);
   this.messages.push({role:'user',content:userText});
   this.trace('turn.start',{promptHash:FlightRecorder.hash(userText)});
   this.emitContext();
   if(estChars(this.messages)>this.compactLimit())this.autoCompact([],'auto',false);
 
   let finalText='',totalThisTurn=0;
-  let mutated=false,verified=false,verificationPrompted=false,stalled=false;
+  let mutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false;
   const proof=new ProofTracker({goal:userText,mode:this.mode});
   let lastBatchFingerprint='',repeatBatchCount=0;
   const runtime=this.config.agentRuntime||{};
@@ -64,7 +66,8 @@ export class AgentSession{
     const toolDetail=detail(args);this.trace('tool.start',{name,detail:toolDetail,callId:call.id,argsHash:FlightRecorder.hash(args)});
     const cardId=this.events.onToolStart?.({name,args,detail:toolDetail,callId:call.id});
     let result;
-    try{result=await this.tools.execute(name,args,this.mode,{signal});}
+    if(name==='run_command'&&/\bgit\s+push\b/i.test(String(args.command||''))&&proof.browserRequired&&!proof.browserVerified)result={error:'Push blocked: UI/web changes require Playwright browser verification first.'};
+    else try{result=await this.tools.execute(name,args,this.mode,{signal});}
     catch(e){if(e.name==='AbortError')throw e;result={error:String(e.message||e)};}
     const content=typeof result==='string'?result:JSON.stringify(result);
     const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
@@ -135,6 +138,13 @@ export class AgentSession{
           if(res.finishReason==='length'){
             this.events.onWarn?.('Output limit reached · continuing automatically…');
             this.messages.push({role:'user',content:'[Craft Code continuation] Continue exactly where the previous response stopped. Do not repeat completed work.'});
+            this.emitContext();
+            continue outer;
+          }
+          if(this.mode==='build'&&mutated&&runtime.autoBrowserVerify!==false&&proof.browserRequired&&!proof.browserVerified&&!browserPrompted){
+            browserPrompted=true;
+            this.events.onWarn?.('UI/web change detected · running browser verification before finalizing…');
+            this.messages.push({role:'user',content:'[Craft Code browser verification gate] UI/web files changed. Before finalizing or pushing, verify the changed behavior in a real browser automatically. Do not ask the user to run /browser. If needed, discover and start the project dev server with discover_project_commands + process_start. Then use list_mcp_tools for server "playwright" and call the minimum Playwright tools needed to navigate the relevant page and capture a browser snapshot or screenshot. Inspect the result for the intended behavior and obvious runtime/console/UI regressions. If browser verification cannot run, state the concrete blocker and do not push.'});
             this.emitContext();
             continue outer;
           }

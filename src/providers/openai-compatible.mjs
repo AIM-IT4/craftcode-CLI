@@ -19,7 +19,17 @@ const retryMs=(r,attempt=0)=>{
   if(reset!=null)return Math.max(750,reset);
   return Math.min(15_000,1500*(2**attempt));
 };
-const unknownCaps=()=>({tools:'unknown',reasoning:'unknown',vision:'unknown',structuredOutput:'unknown',contextWindow:null});
+const unknownCaps=()=>({tools:'unknown',reasoning:'unknown',vision:'unknown',imageGeneration:'unknown',structuredOutput:'unknown',contextWindow:null});
+const asList=v=>Array.isArray(v)?v.map(x=>String(x).toLowerCase()):[];
+const imageGenerationFromMeta=m=>{
+  const explicit=m?.capabilities?.image_generation??m?.capabilities?.imageGeneration??m?.image_generation??m?.imageGeneration;
+  if(typeof explicit==='boolean')return explicit;
+  const outputs=[...asList(m?.output_modalities),...asList(m?.supported_output_modalities),...asList(m?.architecture?.output_modalities),...asList(m?.modalities?.output)];
+  if(outputs.some(x=>/image/.test(x)))return true;
+  const id=String(m?.id||m?.name||'').toLowerCase();
+  if(/(?:^|[-_/])(gpt-image|dall-e|imagen|flux|stable-diffusion|sdxl)(?:[-_/]|$)/.test(id))return true;
+  return'unknown';
+};
 class ProviderRequestError extends Error{
   constructor(label,status,body,{code=null,contextWindow=null,inputTokens=null}={}){
     const resolved=code||classifyProviderError(status,body);
@@ -29,15 +39,16 @@ class ProviderRequestError extends Error{
 }
 
 export class OpenAICompatibleClient{
-  constructor({id='custom',label='OpenAI Compatible',apiKey='',baseUrl,maxOutputTokens=8192,onRateLimit=null,maxRateLimitRetries=4,extraHeaders={}}={}){
+  constructor({id='custom',label='OpenAI Compatible',apiKey='',baseUrl,maxOutputTokens=8192,onRateLimit=null,maxRateLimitRetries=4,extraHeaders={},imageGeneration='auto',imageEndpoint='/images/generations',imageModel=''}={}){
     if(!baseUrl)throw new Error(`Provider ${id} has no baseUrl.`);
-    this.id=id;this.label=label;this.apiKey=String(apiKey||'').trim().replace(/^(["'])(.*)\1$/,'$2').trim();this.baseUrl=String(baseUrl).replace(/\/$/,'');this.maxOutputTokens=maxOutputTokens;this.onRateLimit=onRateLimit;this.maxRateLimitRetries=maxRateLimitRetries;this.extraHeaders={...extraHeaders};this.rateLimits={};this.rateGate=0;this.inFlightEstimatedTokens=0;this.modelMeta=new Map();
+    this.id=id;this.label=label;this.apiKey=String(apiKey||'').trim().replace(/^(["'])(.*)\1$/,'$2').trim();this.baseUrl=String(baseUrl).replace(/\/$/,'');this.maxOutputTokens=maxOutputTokens;this.onRateLimit=onRateLimit;this.maxRateLimitRetries=maxRateLimitRetries;this.extraHeaders={...extraHeaders};this.imageGeneration=imageGeneration;this.imageEndpoint=String(imageEndpoint||'/images/generations');this.imageModel=String(imageModel||'');this.rateLimits={};this.rateGate=0;this.inFlightEstimatedTokens=0;this.modelMeta=new Map();
   }
   headers(){return{...(this.apiKey?{Authorization:`Bearer ${this.apiKey}`}:{}),'Content-Type':'application/json',...this.extraHeaders};}
   captureRateLimits(r){const num=k=>{const v=Number(r.headers.get(k));return Number.isFinite(v)&&v>=0?v:null;};this.rateLimits={rpmLimit:num('x-ratelimit-limit'),rpmRemaining:num('x-ratelimit-remaining'),tpmLimit:num('x-ratelimit-limit-tokens'),tpmRemaining:num('x-ratelimit-remaining-tokens'),reset:r.headers.get('x-ratelimit-reset-tokens')||r.headers.get('x-ratelimit-reset')||null};}
   planHint(){return null;}
   rateProfile(){return{...this.rateLimits,inFlightEstimatedTokens:this.inFlightEstimatedTokens};}
-  capabilities(model){const m=typeof model==='string'?this.modelMeta.get(model):model;return{...unknownCaps(),contextWindow:Number(m?.context_length||m?.context_window)||null};}
+  imageModelFor(model=''){if(this.imageModel)return this.imageModel;const selected=typeof model==='string'?this.modelMeta.get(model):model;if(imageGenerationFromMeta(selected)===true)return selected?.id||selected?.name||String(model||'');for(const [id,m] of this.modelMeta)if(imageGenerationFromMeta(m)===true)return id;return'';}
+  capabilities(model){const m=typeof model==='string'?this.modelMeta.get(model):model,detected=imageGenerationFromMeta(m),catalogImage=!!this.imageModelFor(model),configured=this.imageGeneration===true?true:this.imageGeneration===false?false:(detected===true||catalogImage?true:detected);return{...unknownCaps(),imageGeneration:configured,imageModel:this.imageModelFor(model)||null,contextWindow:Number(m?.context_length||m?.context_window)||null};}
   async models({signal}={}){const r=await fetch(`${this.baseUrl}/models`,{headers:this.headers(),signal});this.captureRateLimits(r);if(!r.ok){const d=await r.text();if(r.status===401)throw new Error(`${this.label} authentication failed (401). Check the provider API key.`);throw new Error(`${this.label} models API ${r.status}: ${d}`);}const j=await r.json(),models=j.data||j.models||[];this.modelMeta=new Map(models.map(m=>[m.id||m.name,m]).filter(([id])=>id));return models;}
   _resetDelayMs(){return resetMsFromValue(this.rateLimits.reset);}
   _refreshWindowIfElapsed(){const d=this._resetDelayMs();if(d===0&&this.rateLimits.tpmLimit){this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;if(this.rateLimits.rpmLimit)this.rateLimits.rpmRemaining=this.rateLimits.rpmLimit;}}
@@ -48,6 +59,23 @@ export class OpenAICompatibleClient{
     await this._waitGate(signal);const tpm=this.rateLimits.tpmLimit,remaining=this.rateLimits.tpmRemaining;
     if(tpm&&remaining!=null){const available=Math.max(0,remaining-this.inFlightEstimatedTokens),headroom=Math.max(2000,Math.floor(tpm*0.04));if(estimated+headroom>available&&remaining<tpm){const ms=Math.max(750,this._resetDelayMs()??1500);this.rateGate=Math.max(this.rateGate,Date.now()+ms);this.onRateLimit?.({attempt:0,retryMs:ms,tpmLimit:tpm,tpmRemaining:remaining,message:'Proactive TPM pacing',proactive:true,estimatedTokens:estimated,provider:this.id});await this._waitGate(signal);if(this.rateLimits.tpmLimit)this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;}}
     this.inFlightEstimatedTokens+=estimated;let released=false;return()=>{if(released)return;released=true;this.inFlightEstimatedTokens=Math.max(0,this.inFlightEstimatedTokens-estimated);};
+  }
+  async generateImage({model,prompt,size='1024x1024',quality='',background='',signal}={}){
+    const chosen=this.imageModelFor(model);if(!chosen)throw new Error(this.label+' API catalog does not advertise an image-generation model.');
+    if(this.imageGeneration===false)throw new Error(this.label+' image generation is disabled by provider configuration.');
+    const endpoint=this.imageEndpoint.startsWith('/')?this.imageEndpoint:'/'+this.imageEndpoint;
+    const base={model:chosen,prompt:String(prompt||''),n:1,size:String(size||'1024x1024')};if(!base.prompt.trim())throw new Error('Image prompt is required.');
+    if(quality)base.quality=quality;if(background)base.background=background;
+    const request=body=>fetch(this.baseUrl+endpoint,{method:'POST',headers:this.headers(),body:JSON.stringify(body),signal});
+    let r=await request({...base,response_format:'b64_json'});this.captureRateLimits(r);
+    if(!r.ok&&r.status===400){const first=await r.text();if(/response[_ -]?format|b64_json/i.test(first)){r=await request(base);this.captureRateLimits(r);}else throw new ProviderRequestError(this.label,r.status,first);}
+    if(!r.ok){const body=await r.text();throw new ProviderRequestError(this.label,r.status,body);}
+    const j=await r.json(),item=j?.data?.[0]||j?.images?.[0]||j,b64=item?.b64_json||item?.base64||item?.image_base64;
+    if(b64)return{bytes:Buffer.from(String(b64).replace(/^data:[^,]+,/i,''),'base64'),mimeType:item?.mime_type||'image/png',model:chosen,revisedPrompt:item?.revised_prompt||''};
+    const url=item?.url||item?.image_url;if(!url)throw new Error(this.label+' image API returned neither base64 image data nor a URL.');
+    const img=await fetch(url,{signal});if(!img.ok)throw new Error(this.label+' image download failed ('+img.status+').');
+    const mimeType=img.headers.get('content-type')||'image/png';if(!/^image\//i.test(mimeType))throw new Error(this.label+' image URL returned unexpected content type '+mimeType+'.');
+    return{bytes:Buffer.from(await img.arrayBuffer()),mimeType,model:chosen,revisedPrompt:item?.revised_prompt||'',url};
   }
   async stream({model,messages,tools,onText,signal}){
     const inputTokens=this.estimateInputTokens(messages,tools),contextWindow=this.capabilities(model)?.contextWindow||0,safety=contextWindow?Math.max(512,Math.floor(contextWindow*.02)):0;

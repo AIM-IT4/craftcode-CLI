@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0
+
+Released: 2026-10-06.
+
+- Added capability-aware image generation. Craft Code discovers image-output models from provider metadata, can automatically use a separate image model from the same API catalog, and exposes `generate_image` only when the capability is real or explicitly configured.
+- Image bytes are written directly to workspace files; base64 payloads are never injected into the model conversation.
+- Added automatic skill routing. Relevant skills are selected from name/description metadata before each turn, loaded without slash commands, and constrained by a configurable skill count/token budget.
+- Reduced recurring skill prompt overhead by replacing the large description catalog with a compact skill-name catalog plus only the auto-selected full skill content.
+- Added automatic browser-verification gates for UI/web changes. Craft Code starts the Playwright connector lazily, can navigate localhost and capture snapshots/screenshots/console/network evidence without a manual `/browser` command, and blocks `git push` until required browser evidence exists.
+- Potentially state-changing browser actions remain permission-sensitive.
+- Proof of Change now records whether browser verification was required/completed and penalizes UI changes that lack browser evidence.
+- Diff inspection no longer counts as executable verification by itself; edited code still needs focused test/lint/typecheck/build evidence when applicable.
+- Added regression coverage for image-model discovery, image-file writes, auto-skill relevance/token limits, and browser verification safety.
+
 ## 0.12.0
 
 Released: 2026-10-06.
