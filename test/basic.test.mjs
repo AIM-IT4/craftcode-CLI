@@ -496,6 +496,44 @@ test('TUI exposes provider commands and provider picker',async()=>{
   await Promise.race([pending,Promise.resolve('skip')]);
 });
 
+test('Escape dismisses slash-command suggestions without clearing typed input',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.input='/mod';tui.cursor=tui.input.length;
+  assert.ok(tui.commandSuggestions().length>0);
+  tui.handleKey('\x1b');
+  assert.equal(tui.input,'/mod');
+  assert.equal(tui.commandSuggestions().length,0);
+  tui.handleKey('e');
+  assert.ok(tui.commandSuggestions().length>0);
+});
+
+test('Escape dismisses file suggestions without deleting the @ reference',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.fileRefs={suggest:()=>['src/index.mjs','src/tui.mjs']};tui.input='check @src';tui.cursor=tui.input.length;
+  assert.equal(tui.fileSuggestions().length,2);
+  tui.handleKey('\x1b');
+  assert.equal(tui.input,'check @src');
+  assert.equal(tui.fileSuggestions().length,0);
+});
+
+test('Escape closes a picker before cancelling an active agent turn',async()=>{
+  let cancelled=0;
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,onCancel:()=>{cancelled++;}});tui.schedule=()=>{};tui.running=true;tui.busy=true;
+  const pending=tui.openPicker('model','Select model',[{id:'a',label:'A'}],'a');
+  tui.handleKey('\x1b');
+  assert.equal(await pending,null);
+  assert.equal(cancelled,0);
+  assert.equal(tui.modal,null);
+  tui.handleKey('\x1b');
+  assert.equal(cancelled,1);
+});
+
+test('Escape dismisses approval and plan dialogs consistently',async()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  const approval=tui.askApproval('write','change file');tui.handleKey('\x1b');assert.equal(await approval,false);assert.equal(tui.approval,null);
+  const plan=tui.askPlanApproval();tui.handleKey('\x1b');assert.equal(await plan,'dismiss');assert.equal(tui.planApproval,null);
+});
+
 test('TUI provider metadata can change independently from model',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),provider:'codecraft',model:'cc-model',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
   tui.setMeta({provider:'openrouter',model:'or-model'});
@@ -526,7 +564,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.14\.0/);
+  assert.match(stdout,/Craft Code 0\.14\.1/);
   assert.match(stdout,/Provider:/);
 });
 

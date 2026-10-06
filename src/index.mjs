@@ -102,7 +102,7 @@ async function vercelBrowserLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.0');return;}
+  if(version){console.log('Craft Code 0.14.1');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -115,7 +115,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.0');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.1');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -240,7 +240,7 @@ async function main(){
       if(cmd==='/select'){tui.enterSelectionMode();return;}
       if(cmd==='/mouse'){const v=(rest[0]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /mouse on|off. Native terminal selection is the default.');tui.setMouseCapture(v==='on');return;}
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /proof, /flight, /replay, /instructions, /provider, /model, /mode, /effort, /permissions, /style and /usage for controls. /arena compares isolated candidate patches; /arena uses the current provider by default, so CodeCraft alone is sufficient. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations and opens browser approval automatically when the connector supports it. Vercel uses its official OAuth device flow through a transient `npx vercel@latest` invocation, so no global Vercel CLI install is required. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc closes the active panel/suggestions; press again to cancel a running turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /proof, /flight, /replay, /instructions, /provider, /model, /mode, /effort, /permissions, /style and /usage for controls. /arena compares isolated candidate patches; /arena uses the current provider by default, so CodeCraft alone is sufficient. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations and opens browser approval automatically when the connector supports it. Vercel uses its official OAuth device flow through a transient `npx vercel@latest` invocation, so no global Vercel CLI install is required. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
