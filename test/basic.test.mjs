@@ -67,7 +67,7 @@ test('slash commands are normalized and never added to chat transcript',async()=
 test('thinking is represented inline with Claude-style activity copy',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,uiStyle:'claude'});tui.schedule=()=>{};
   tui.add('user','hello');tui.setBusy(true);assert.equal(tui.transcript.at(-1).role,'thinking');assert.equal(tui.transcript.at(-1).status,'running');
-  let rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/✻ Thinking…/);
+  let rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/◐ Thinking…/);
   tui.setBusy(false);assert.equal(tui.transcript.at(-1).status,'done');
   rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/✻ Thought/);
 });
