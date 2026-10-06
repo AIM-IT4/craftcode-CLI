@@ -109,7 +109,7 @@ async function vercelBrowserLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.8');return;}
+  if(version){console.log('Craft Code 0.14.9');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -122,7 +122,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.8');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.9');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -395,9 +395,11 @@ async function main(){
         const r=await initAgentsFile(cwd);if(!r.created)return tui.add('notice','AGENTS.md already exists; left unchanged.');projectInstructions=await loadProjectInstructions(cwd,config);session.setProjectInstructions(projectInstructions);agents.projectInstructions=projectInstructions;return tui.add('assistant',`Created \`${r.file}\`. Edit it with your project commands and conventions; Craft Code now loads it automatically.`);
       }
       if(cmd==='/settings'){
-        const key=(rest[0]||'').toLowerCase();if(key==='autoresume'||key==='auto-resume'){const v=(rest[1]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /settings autoresume on|off.');config.sessions=config.sessions||{};config.sessions.autoResume=v==='on';const f=await updateProjectConfig(cwd,{sessions:{autoResume:v==='on'}});return tui.setNotice(`Auto-resume ${v} · ${f}`,2200);}return tui.add('assistant',`Workspace settings\n\n- Auto-resume: **${config.sessions?.autoResume?'on':'off'}**\n- Autosave: **${config.sessions?.autosave!==false?'on':'off'}**\n- Project config: \`${path.join(cwd,'.craftcli','config.json')}\``);
+        const key=(rest[0]||'').toLowerCase();if(key==='autoresume'||key==='auto-resume'){const v=(rest[1]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /settings autoresume on|off.');config.sessions=config.sessions||{};config.sessions.autoResume=v==='on';const f=await updateProjectConfig(cwd,{sessions:{autoResume:v==='on'}});return tui.setNotice(`Auto-resume ${v} · ${f}`,2200);}return tui.add('assistant',`Workspace settings\n\n- Auto-resume: **${config.sessions?.autoResume?'on':'off'}**\n- Autosave: **${config.sessions?.autosave!==false?'on':'off'}**\n- Spark plushie: **${config.ui?.plushie||'auto'}**\n- Project config: \`${path.join(cwd,'.craftcli','config.json')}\``);
       }
       if(cmd==='/style'){const v=(rest[0]||'').toLowerCase();if(!v)return tui.add('assistant',`Visual style: **${config.ui?.style||'claude'}**\n\nUse /style claude, /style classic, or /style minimal. Craft Code can change glyphs, ANSI emphasis, spacing, and colors; the actual font family is controlled by your terminal application.`);if(!['claude','classic','minimal'].includes(v))return tui.add('notice','Use /style claude|classic|minimal.');config.ui={...(config.ui||{}),style:v};await updateProjectConfig(cwd,{ui:{style:v}});tui.setMeta({uiStyle:v});return tui.setNotice(`Visual style · ${v}`,1800);}
+      if(cmd==='/plushie'){const v=(rest[0]||'').toLowerCase();if(!v)return tui.openInfo('CraftCode Spark',`Plushie: ${config.ui?.plushie||'auto'}\n\n/plushie auto  show when terminal has enough room\n/plushie on    always show when physically possible\n/plushie off   hide Spark\n\nSpark is an original CraftCode mascot. It animates while the agent works and changes expression on success/error.`);if(!['auto','on','off'].includes(v))return tui.add('notice','Use /plushie auto|on|off.');config.ui={...(config.ui||{}),plushie:v};await updateProjectConfig(cwd,{ui:{plushie:v}});tui.setMeta({plushie:v});return tui.setNotice(`Spark plushie · ${v}`,1800);}
+
       if(cmd==='/config')return tui.add('assistant',GLOBAL_CONFIG);
       const pluginCmd=plugins.expandCommand(cmd.slice(1),arg);if(pluginCmd){tui.add('user',cmd+(arg?` ${arg}`:''));await runOne(pluginCmd.prompt);return;}
       tui.add('notice',`Unknown command · ${cmd}`);
@@ -416,7 +418,7 @@ async function main(){
   };
 
   tui=new TerminalTui({
-    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,uiStyle:config.ui?.style||'claude',
+    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,uiStyle:config.ui?.style||'claude',plushie:config.ui?.plushie||'auto',
     onSubmit:runOne,onCommand:command,onCancel:()=>session.cancel(),onExit:exit,fileRefs:refs,showSplash,
     onModelsRequest:()=>client.models(),onModelPick:setModel,onModePick:setMode,onEffortPick:setEffort,onPermissionPick:setPermissions,onPermissionCycle:cyclePermissions,onPermissionDecision:persistApproval,onQuickAction:quickAction,
     startupMeta:{skills:skills.list().length,plugins:plugins.list().length,mcp:mcp.list().length,planName:client.planHint()?.name||'',rpm:client.rateLimits.rpmLimit||0}
