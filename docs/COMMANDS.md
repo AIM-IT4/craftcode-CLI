@@ -29,6 +29,7 @@ CLI authentication:
 - `/effort` — Low / Normal / High
 - `/permissions` — permission preset picker
 - `/style claude|classic|minimal` — switch terminal glyph/emphasis profile (font family is controlled by the terminal emulator)
+- `/plushie auto|on|off` — control the animated Spark terminal mascot above the composer
 - `/agents`
 - `/agent spawn <role> <task>`
 - `/team [count] <task>`
