@@ -191,7 +191,7 @@ async function main(){
     let git='not a Git repository';try{const x=await tools.execute('git_status',{},'plan');git=String(x||'clean').split('\n').slice(0,4).join('\n');}catch{}
     const u=usage.snapshot(),ctx=session.contextStats(),connected=mcp.list().filter(x=>x.connected).map(x=>x.name),title=store.currentTitle||'Untitled session',rate=client.rateProfile();
     const providerSummary=providerStatusSummary({providerLabel:providerConfig.label,providerId,model:session.model,usage:u,planSource:planResolved.source});
-    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n${providerSummary}\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)}${ctx.contextWindow?` / ${fmtTokens(ctx.contextWindow)} (${ctx.percent}%)`:''} · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
+    return `# Craft Code status\n\n- **Session:** ${title} (\`${store.currentId}\`)\n- **Workspace:** \`${cwd}\`\n${providerSummary}\n- **Mode / effort:** ${mode} / ${effort}\n- **Permissions:** ${permissionPreset}\n- **Context:** ~${fmtTokens(ctx.estimatedTokens)}${ctx.contextWindow?` / ${fmtTokens(ctx.contextWindow)} (${ctx.percent}%)`:''} · ${ctx.messages} messages\n- **API rate:** ${rate.tpmLimit?fmtTokens(rate.tpmLimit)+' TPM · '+fmtTokens(rate.tpmRemaining??0)+' remaining':'not reported yet'}${rate.rpmLimit?' · '+rate.rpmLimit+' RPM':''}\n- **Project instructions:** ${projectInstructions.length?projectInstructions.map(x=>x.file).join(', '):'none'}\n- **Skills / plugins:** ${skills.list().length} / ${plugins.list().length}\n- **Connected MCP:** ${connected.length?connected.join(', '):'none'}\n- **Last proof:** ${session.lastProof?.applicable?`${session.lastProof.score}/100 (${session.lastProof.label})`:'n/a'}\n- **Last flight:** ${lastRunId?`\`${lastRunId}\``:'none'}\n\n## Git\n\n\`\`\`\n${git}\n\`\`\``;
   };
 
   const runOne=async(raw,{implementing=false}={})=>{
@@ -217,6 +217,21 @@ async function main(){
     while(!processing&&tui.hasQueue()){const n=tui.dequeue();if(!n)break;tui.add('user',n);await runOne(n);}
   };
 
+  const buildArenaCandidates=async(useAll=false)=>{
+    const current={provider:providerId,client,model:pickSubagentModel(availableModels,model)};
+    if(!useAll)return[current];
+    const out=[current],seen=new Set([providerId]);
+    for(const p of providers.list()){
+      if(seen.has(p.id))continue;seen.add(p.id);
+      try{
+        const credential=await resolveProviderApiKey(p.id,p);if(p.auth!==false&&!credential.key)continue;
+        const candidateClient=providers.create(p.id,{apiKey:credential.key,maxOutputTokens:config.maxOutputTokens}),models=await candidateClient.models(),candidateModel=pickSubagentModel(models,pickDefaultModel(models,''));
+        if(candidateModel)out.push({provider:p.id,client:candidateClient,model:candidateModel});
+      }catch{}
+    }
+    return out;
+  };
+
   const command=async line=>{
     const parts=line.trim().split(/\s+/),cmd=(parts[0]||'').toLowerCase(),rest=parts.slice(1),arg=rest.join(' ');
     try{
@@ -224,7 +239,7 @@ async function main(){
       if(cmd==='/select'){tui.enterSelectionMode();return;}
       if(cmd==='/mouse'){const v=(rest[0]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /mouse on|off. Native terminal selection is the default.');tui.setMouseCapture(v==='on');return;}
       if(cmd==='/help'){
-        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /instructions, /provider, /model, /mode, /effort, /permissions, /style and /usage for controls. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations and opens browser approval automatically when the connector supports it. Vercel uses its official OAuth device flow through a transient `npx vercel@latest` invocation, so no global Vercel CLI install is required. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
+        tui.add('assistant','Enter sends · Ctrl+J inserts a new line · Esc cancels the active turn\n↑/↓ selects command/file suggestions · Tab completes\nWheel/↑↓/PgUp/PgDn scroll transcript · Ctrl+P/Ctrl+N recall prompt history · drag-select + Ctrl+C works by default\nAlt+↑/↓ selects tool cards · Ctrl+O expands a tool card\n\nSessions: /sessions opens an interactive resume picker; /resume resumes latest; /session name <title>, /session fork, /session export and /session delete manage history. From CMD use `craftcode continue <project>` or `craftcode -c <project>`.\n\nUse /status, /context, /proof, /flight, /replay, /instructions, /provider, /model, /mode, /effort, /permissions, /style and /usage for controls. /arena compares isolated candidate patches; /arena uses the current provider by default, so CodeCraft alone is sufficient. /agents and /team launch bounded subagents. /plugin supports Claude marketplaces. /connect manages integrations and opens browser approval automatically when the connector supports it. Vercel uses its official OAuth device flow through a transient `npx vercel@latest` invocation, so no global Vercel CLI install is required. /browser starts the Playwright Chromium connector; public URLs and GitHub repository links can also be inspected directly without a browser. Shift+Tab cycles permission presets. Footer controls are keyboard-first; enable clickable mouse controls explicitly with `/mouse on`.');return;
       }
       if(cmd==='/mode'){
         if(rest[0]&&['plan','build'].includes(rest[0].toLowerCase())){setMode(rest[0].toLowerCase());return tui.setNotice(`Mode · ${rest[0].toUpperCase()}`);}
@@ -306,6 +321,34 @@ async function main(){
         const n=/^\d+$/.test(rest[0]||'')?Math.max(1,Math.min(6,Number(rest.shift()))):Math.min(3,config.agents?.maxParallel||3),task=rest.join(' ');if(!task)return tui.add('notice','Use /team [1-6] <task>.');const parallel=agents.parallelLimit();tui.setNotice(`Launching ${n} agents · up to ${Math.min(n,parallel)} concurrent for current TPM…`,0);const rs=await agents.team({task,count:n});tui.add('assistant',`Parallel agent results\n\n${agents.summary(rs)}`);tui.setNotice(`${n} agents completed`,1800);return;
       }
       if(cmd==='/orchestrate'){const task=rest.join(' ');if(!task)return tui.add('notice','Use /orchestrate <task>.');tui.setNotice('Planning dependency-aware agent graph…',0);const r=await agents.orchestrate({task,maxWorkers:config.agents?.maxParallel||3});tui.add('assistant',`Orchestrated review\n\n${r.review?.result||r.review?.error||'No reviewer result.'}`);tui.setNotice(`${r.workers.length} worker task(s) reviewed`,1800);return;}
+      if(cmd==='/proof'){tui.add('assistant',formatProof(session.lastProof));return;}
+      if(cmd==='/flight'){
+        if(!recorder)return tui.add('notice','Flight Recorder is disabled in workspace config.');
+        if((rest[0]||'').toLowerCase()==='show'&&rest[1]){const r=await recorder.load(rest[1]);if(!r)return tui.add('notice','Flight run not found.');const timeline=r.events.slice(0,80).map(summarizeFlightEvent).filter(Boolean).join('\n');return tui.add('assistant',`Flight ${r.id}\n\nSession: ${r.start.sessionId||'?'}\nProvider/model: ${r.start.provider||'?'} / ${r.start.model||'?'}\nStarted: ${r.start.at||'?'}\n\nTimeline\n${timeline}${r.events.length>80?'\n… timeline clipped':''}`);}
+        const rows=await recorder.list(12);return tui.add('assistant',rows.length?rows.map(x=>`${x.id} · ${x.status} · ${x.provider}/${x.model} · ${x.score==null?'proof n/a':`proof ${x.score}/100`} · ${x.events} events · ${x.goal||''}`).join('\n'):'No recorded runs yet.');
+      }
+      if(cmd==='/replay'){
+        if(!recorder)return tui.add('notice','Flight Recorder is disabled in workspace config.');
+        const ref=rest[0]||'latest',r=await recorder.load(ref);if(!r)return tui.add('notice','Flight run not found.');
+        const requested=/^\d+$/.test(rest[1]||'')?Number(rest[1]):null,target=requested!=null?r.events.find(x=>x.seq===requested):[...r.events].reverse().find(x=>x.type==='turn.end'||x.type==='model.response'||x.type==='tool.end');
+        if(!target)return tui.add('notice','No replayable step found in that run.');
+        const finalEpoch=Number(r.end.contextEpoch??target.epoch??0),targetEpoch=Number(target.epoch??finalEpoch);
+        if(targetEpoch!==finalEpoch)return tui.add('notice',`Exact replay of step #${target.seq} is unavailable because the conversation was compacted afterward (epoch ${targetEpoch} → ${finalEpoch}). Use /flight show ${r.id} and choose a step after the latest compact event.`);
+        const count=Number(target.messageCount||r.end.messageCount||0);if(!count)return tui.add('notice','That run does not contain a replayable message boundary.');
+        const fork=await store.forkPrefix(r.start.sessionId,count,{title:`Replay ${r.id} #${target.seq}`});if(!fork)return tui.add('notice','Source session for this run is no longer available.');
+        await resumeSession(fork.id);tui.setNotice(`Time travel · ${r.id} #${target.seq} · forked safely`,2600);return;
+      }
+      if(cmd==='/arena'){
+        const sub=(rest[0]||'').toLowerCase();
+        if(sub==='apply'){const arenaId=rest[1],candidate=rest[2]||'winner';if(!arenaId)return tui.add('notice','Use /arena apply <arena-id> [candidate].');if(!await tui.askApproval('write',`Apply ${candidate} from ${arenaId} to the main workspace?`))return;const applied=await agents.applyArena(arenaId,candidate);tui.add(applied.ok?'assistant':'notice',applied.message);return;}
+        if(sub==='list'){const xs=agents.arenaList();return tui.add('assistant',xs.length?xs.map(x=>`${x.id} · ${x.candidates} candidates · winner ${x.winnerId} · ${x.task}`).join('\n'):'No arena runs in this process yet.');}
+        let useAll=false;if((rest[0]||'').toLowerCase()==='all'){useAll=true;rest.shift();}
+        const max=Math.max(2,Math.min(6,config.arena?.maxCandidates||4)),count=/^\d+$/.test(rest[0]||'')?Math.max(2,Math.min(max,Number(rest.shift()))):Math.max(2,Math.min(max,config.arena?.defaultCandidates||2)),task=rest.join(' ');
+        if(!task)return tui.add('assistant','Use /arena [2-6] <task> for CodeCraft-only candidate competition, or /arena all [2-6] <task> to include any other providers that are already authenticated.');
+        const allowShell=await tui.askApproval('shell',`Allow ${count} isolated arena candidates to run focused test/lint/typecheck/build commands? Each candidate edits only its temporary Git worktree.`);
+        const candidates=await buildArenaCandidates(useAll);tui.setNotice(`Arena · ${count} candidates · ${useAll?candidates.map(x=>x.provider).join(', '):providerId}`,0);
+        const a=await agents.arena({task,count,candidates,allowShell,budgetPerAgent:config.agents?.defaultBudgetTokens});tui.add('assistant',agents.arenaSummary(a));tui.setNotice(`Arena complete · winner ${a.winnerId||'none'}`,2400);return;
+      }
       if(cmd==='/bash'){if(!arg)return tui.add('notice','Use !<command> or /bash <command>.');const r=await tools.execute('run_command',{command:arg},mode);tui.add('assistant','```text\n'+String(r||'')+'\n```');return;}
       if(cmd==='/diff'){const r=await tools.execute('git_diff',{staged:false},'plan');tui.add('assistant',r||'No diff.');return;}
       if(cmd==='/checkpoints'){const cp=await checkpoints.latest();tui.add('assistant',cp?`Latest checkpoint\n${cp.id}\n${cp.createdAt}\n${Object.keys(cp.files||{}).length} direct file snapshot(s)${cp.shellTouched?'\nShell activity also tracked where Git can detect it.':''}`:'No checkpoint available.');return;}
