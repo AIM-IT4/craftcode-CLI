@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.3
+
+Released: 2026-10-06.
+
+- Fixed list/info commands such as `/providers` leaving permanent transcript output that Escape could not dismiss.
+- Added scrollable info panels that close with Escape, Enter, or Q.
+- `/providers`, `/skills`, `/plugins`, `/mcp`, `/mcp tools <server>`, and `/agents` now use dismissible panels instead of permanent assistant messages.
+- Info panels support Up/Down and Page Up/Page Down scrolling for long lists.
+- Added regression coverage for Escape close and keyboard scrolling.
+
 ## 0.14.2
 
 Released: 2026-10-06.
