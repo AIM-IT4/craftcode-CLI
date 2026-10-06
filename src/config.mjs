@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 19,
+  configVersion: 20,
   provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
@@ -115,7 +115,8 @@ const defaults = {
     autosave: true
   },
   ui: {
-    style: 'claude'
+    style: 'claude',
+    plushie: 'auto'
   },
   instructions: {
     files: ['AGENTS.md','CLAUDE.md','.github/copilot-instructions.md'],
