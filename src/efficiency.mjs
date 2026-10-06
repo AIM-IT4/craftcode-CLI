@@ -17,7 +17,7 @@ function commandEvidence(s,max){
   for(let i=Math.max(0,lines.length-36);i<lines.length;i++)keep.add(i);
   const selected=[...keep].sort((a,b)=>a-b).map(i=>lines[i]);
   const out=selected.join('\n');
-  return clip('[compressed command evidence; full output retained locally]\n'+out,max);
+  return clip('[compressed command evidence; full output omitted from model context]\n'+out,max);
 }
 
 function lineEvidence(s,max,prefix){
@@ -42,8 +42,8 @@ export function reduceToolResult(name,args,content,config={}){
   else if(name==='call_mcp_tool'&&String(args?.server||'').toLowerCase()==='playwright')max=limits.browser;
   if(raw.length>max){
     if(name==='run_command'||name==='process_logs')reduced=commandEvidence(raw,max);
-    else if(name==='search_files'||name==='repo_map')reduced=lineEvidence(raw,max,'[compressed search/map evidence; full output retained locally]');
-    else if(name==='call_mcp_tool')reduced=lineEvidence(raw,max,'[compressed connector evidence; full output retained locally]');
+    else if(name==='search_files'||name==='repo_map')reduced=lineEvidence(raw,max,'[compressed search/map evidence; full output omitted from model context]');
+    else if(name==='call_mcp_tool')reduced=lineEvidence(raw,max,'[compressed connector evidence; full output omitted from model context]');
     else reduced=clip(raw,max);
   }
   return{content:reduced,rawChars:raw.length,sentChars:reduced.length,compressed:reduced.length<raw.length,hash:hash(raw)};
