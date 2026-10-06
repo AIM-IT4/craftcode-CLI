@@ -69,9 +69,14 @@ function requestClipTool(content,max){
   const s=String(content??'');return s.length<=max?s:clip(s,max);
 }
 
-export function optimizeRequestMessages(messages,{recentTools=6,oldToolChars=2200}={}){
+// The window of full-size recent tool results advances in steps of `cacheChunk` results instead of sliding by one
+// every request. Sliding by one rewrites an earlier message on every step, which invalidates the provider's prompt-prefix
+// cache from that point on; stepping keeps the request prefix byte-identical for `cacheChunk` consecutive requests.
+export function optimizeRequestMessages(messages,{recentTools=6,oldToolChars=2200,cacheChunk=4}={}){
   const src=Array.isArray(messages)?messages:[],toolIndexes=[];for(let i=0;i<src.length;i++)if(src[i]?.role==='tool')toolIndexes.push(i);
-  const recent=new Set(toolIndexes.slice(-Math.max(0,recentTools))),seen=new Map();let rawChars=0,sentChars=0,duplicates=0,compressed=0;
+  const keep=Math.max(0,Math.floor(recentTools)),chunk=Math.max(1,Math.floor(cacheChunk)||1);
+  const firstFull=keep===0?toolIndexes.length:Math.max(0,Math.floor((toolIndexes.length-keep)/chunk)*chunk);
+  const recent=new Set(toolIndexes.slice(firstFull)),seen=new Map();let rawChars=0,sentChars=0,duplicates=0,compressed=0;
   const out=src.map((m,i)=>{
     if(m?.role!=='tool')return m;
     const s=String(m.content??''),h=hash(s);rawChars+=s.length;

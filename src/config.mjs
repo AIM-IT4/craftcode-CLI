@@ -39,7 +39,8 @@ const defaults = {
     enabled: true,
     requestContext: {
       recentToolResults: 6,
-      oldToolChars: 2200
+      oldToolChars: 2200,
+      cacheChunk: 4
     },
     toolResults: {
       runCommandChars: 9000,

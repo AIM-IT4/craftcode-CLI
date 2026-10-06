@@ -81,20 +81,24 @@ export class OpenAICompatibleClient{
     const inputTokens=this.estimateInputTokens(messages,tools),contextWindow=this.capabilities(model)?.contextWindow||0,safety=contextWindow?Math.max(512,Math.floor(contextWindow*.02)):0;
     if(contextWindow&&inputTokens>=contextWindow-safety)throw new ProviderRequestError(this.label,0,`Estimated input ${inputTokens} tokens exceeds the ${contextWindow}-token model context window.`,{code:'CONTEXT_LENGTH',contextWindow,inputTokens});
     const requested=Math.max(256,Math.min(this.maxOutputTokens,Number(maxOutputTokens)||this.maxOutputTokens)),outputTokens=contextWindow?Math.max(256,Math.min(requested,contextWindow-inputTokens-safety)):requested;
-    const body={model,messages,stream:true,max_tokens:outputTokens};if(tools?.length){body.tools=tools;body.tool_choice='auto';}
+    const body={model,messages,stream:true,max_tokens:outputTokens};if(this.supportsStreamUsage!==false)body.stream_options={include_usage:true};if(tools?.length){body.tools=tools;body.tool_choice='auto';}
+    const t0=Date.now();let ttfbMs=null,firstTokenMs=null;
     const estimated=inputTokens+Math.min(outputTokens,4096),release=await this._reserveRateBudget(estimated,signal);let r,last429='';
     try{
       for(let attempt=0;attempt<=this.maxRateLimitRetries;attempt++){
         await this._waitGate(signal);if(signal?.aborted)throw abortError();
         r=await fetch(`${this.baseUrl}/chat/completions`,{method:'POST',headers:this.headers(),body:JSON.stringify(body),signal});this.captureRateLimits(r);
+        if(r.status===400&&body.stream_options){const t=await r.text();if(/stream_options|include_usage/i.test(t)){this.supportsStreamUsage=false;delete body.stream_options;attempt--;continue;}throw new ProviderRequestError(this.label,400,t);}
+        if(ttfbMs===null)ttfbMs=Date.now()-t0;
         if(r.status!==429)break;last429=await r.text();if(attempt>=this.maxRateLimitRetries)throw new Error(`${this.label} 429 after ${attempt+1} attempts: ${last429}`);
         const ms=retryMs(r,attempt);this.rateGate=Math.max(this.rateGate,Date.now()+ms);this.onRateLimit?.({attempt:attempt+1,retryMs:ms,tpmLimit:this.rateLimits.tpmLimit,tpmRemaining:this.rateLimits.tpmRemaining,message:last429,proactive:false,estimatedTokens:estimated,provider:this.id});await this._waitGate(signal);if(this.rateLimits.tpmLimit)this.rateLimits.tpmRemaining=this.rateLimits.tpmLimit;
       }
       if(!r.ok){const bodyText=await r.text();throw new ProviderRequestError(this.label,r.status,bodyText);}if(!r.body)throw new Error(`${this.label} returned no stream body`);
       const reader=r.body.getReader(),decoder=new TextDecoder();let buf='',content='',usage=null,finishReason=null;const calls=new Map();
-      const consume=line=>{line=line.trim();if(!line.startsWith('data:'))return;const raw=line.slice(5).trim();if(!raw||raw==='[DONE]')return;let c;try{c=JSON.parse(raw);}catch{return;}if(c.usage)usage=c.usage;const choice=c.choices?.[0];if(!choice)return;if(choice.finish_reason)finishReason=choice.finish_reason;const d=choice.delta||{};if(typeof d.content==='string'){content+=d.content;onText?.(d.content);}for(const tc of d.tool_calls||[]){const idx=tc.index??calls.size,cur=calls.get(idx)||{id:'',type:'function',function:{name:'',arguments:''}};if(tc.id)cur.id=tc.id;if(tc.function?.name)cur.function.name+=tc.function.name;if(tc.function?.arguments)cur.function.arguments+=tc.function.arguments;calls.set(idx,cur);}};
+      const consume=line=>{line=line.trim();if(!line.startsWith('data:'))return;if(firstTokenMs===null)firstTokenMs=Date.now()-t0;const raw=line.slice(5).trim();if(!raw||raw==='[DONE]')return;let c;try{c=JSON.parse(raw);}catch{return;}if(c.usage)usage=c.usage;const choice=c.choices?.[0];if(!choice)return;if(choice.finish_reason)finishReason=choice.finish_reason;const d=choice.delta||{};if(typeof d.content==='string'){content+=d.content;onText?.(d.content);}for(const tc of d.tool_calls||[]){const idx=tc.index??calls.size,cur=calls.get(idx)||{id:'',type:'function',function:{name:'',arguments:''}};if(tc.id)cur.id=tc.id;if(tc.function?.name)cur.function.name+=tc.function.name;if(tc.function?.arguments)cur.function.arguments+=tc.function.arguments;calls.set(idx,cur);}};
       try{while(true){const{value,done}=await reader.read();if(done)break;buf+=decoder.decode(value,{stream:true});let i;while((i=buf.indexOf('\n'))>=0){consume(buf.slice(0,i));buf=buf.slice(i+1);}}}finally{try{reader.releaseLock();}catch{}}if(buf.trim())consume(buf);
-      return{message:{role:'assistant',content:content||null,...(calls.size?{tool_calls:[...calls.values()]}:{})},usage,finishReason};
+      const timing={ttfbMs,firstTokenMs,totalMs:Date.now()-t0};this.lastTiming=timing;
+      return{message:{role:'assistant',content:content||null,...(calls.size?{tool_calls:[...calls.values()]}:{})},usage,finishReason,timing};
     }finally{release();}
   }
 }

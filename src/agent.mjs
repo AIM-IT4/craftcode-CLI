@@ -11,6 +11,16 @@ Token discipline is mandatory: for an unfamiliar codebase start with repo_map; f
 Skills are token-routed automatically from the user's task. Do not ask the user to type a skill command. Auto-selected skill content, when relevant, appears below. Use list_skills/load_skill only if the automatic router missed something genuinely necessary. Compact skill catalog: ${skillList||'(none)'}\n${autoSkillText?`\nAuto-selected skills:\n${autoSkillText}`:''}
 Plugins are lazy: ${pluginList||'(none)'}. Connectors are lazy: ${mcpList||'(none)'}. Never load every MCP tool schema; inspect only the connector needed for the task. Vercel account authorization is initiated by /connect vercel through the official OAuth device/browser flow using a transient npx invocation, so do not tell the user to install a global Vercel CLI. After connection, use vercel_api for REST reads/writes or run_command with the Vercel CLI bridge for first-class commands. For a direct image-creation request, use generate_image immediately when available. Never create an image-generation Python/JS script, install graphics libraries, or modify project source as a fallback unless the user explicitly asks to build image-generation code. If image generation is unavailable, say so plainly and leave the workspace unchanged.
 ${Array.isArray(projectInstructions)&&projectInstructions.length?`\nProject instructions (authoritative for this workspace):\n${projectInstructions.map(x=>`--- ${x.file} ---\n${x.text}`).join('\n')}`:''}${Array.isArray(pluginContext)&&pluginContext.length?`\nActive plugin lifecycle context:\n${pluginContext.join('\n')}`:''}\nWhen finished, default to a compact result: changed files, verification, and unresolved risks only. Stay under about 120 words unless the user explicitly asks for detail. Do not restate code already present in the applied diff. Never claim a command/test ran unless its tool result confirms it.`;}
+const DOC_EXT=/\.(?:md|mdx|rst|adoc)$/i,DOC_NAME=/(?:^|[\\/])(?:README|CHANGELOG|LICENSE|CONTRIBUTING|NOTICE)(?:\.[a-z0-9]+)?$/i;
+const isDocPath=p=>DOC_EXT.test(p)||DOC_NAME.test(p);
+// Paths a mutating tool call touches, or null when they cannot be determined (treated as a code change).
+export function mutationPaths(name,args={}){
+  if(['write_file','replace_in_file','delete_file','make_directory'].includes(name))return args?.path?[String(args.path)]:null;
+  if(name==='move_file')return args?.from&&args?.to?[String(args.from),String(args.to)]:null;
+  if(name==='apply_patch'){const out=[...String(args?.patch||'').matchAll(/^(?:\+\+\+|---) (?:[ab]\/)?(\S+)/gm)].map(m=>m[1]).filter(x=>x!=='/dev/null');return out.length?out:null;}
+  return null;
+}
+export const docsOnlyMutation=(name,args)=>{const ps=mutationPaths(name,args);return !!ps&&ps.every(isDocPath);};
 const estChars=m=>m.reduce((n,x)=>n+JSON.stringify(x).length,0);
 const fmtContextTokens=n=>n>=1000?`${(n/1000).toFixed(n>=10000?0:1)}k`:String(Math.max(0,Math.round(n)));
 const detail=a=>a?.path||a?.server||a?.command?.slice(0,90)||a?.name||a?.query||'';
@@ -51,7 +61,7 @@ export class AgentSession{
   if(estChars(this.messages)>this.compactLimit())this.autoCompact([],'auto',false);
 
   let finalText='',totalThisTurn=0;
-  let mutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false,lastToolName='',lastToolFailed=false,checkpointStarted=false;
+  let mutated=false,codeMutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false,lastToolName='',lastToolFailed=false,checkpointStarted=false;
   const proof=new ProofTracker({goal:userText,mode:this.mode});
   let lastBatchFingerprint='',repeatBatchCount=0;
   const runtime=this.config.agentRuntime||{};
@@ -85,7 +95,7 @@ export class AgentSession{
     catch(e){if(e.name==='AbortError')throw e;result={error:String(e.message||e)};}
     const content=typeof result==='string'?result:JSON.stringify(result);
     const isMutating=isMutatingTool,isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
-    if(isMutating&&!toolFailed&&name!=='generate_image')mutated=true;
+    if(isMutating&&!toolFailed&&name!=='generate_image'){mutated=true;if(!docsOnlyMutation(name,args))codeMutated=true;}
     if(isVerification&&!toolFailed)verified=true;
     proof.tool({name,args,result:content,error:toolError,mutating:isMutating&&!toolFailed});
     const reduced=this.evidenceLedger.reduce(name,args,content),durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length,contextChars:reduced.content.length,duplicate:!!reduced.duplicate});
@@ -116,7 +126,7 @@ export class AgentSession{
         let res,contextRetried=false,sequenceRetried=false;
         while(true){
           try{
-            const ecfg=this.config.efficiency?.requestContext||{},view=optimizeRequestMessages(this.messages,{recentTools:Number(ecfg.recentToolResults??6),oldToolChars:Number(ecfg.oldToolChars??2200)});
+            const ecfg=this.config.efficiency?.requestContext||{},view=optimizeRequestMessages(this.messages,{recentTools:Number(ecfg.recentToolResults??6),oldToolChars:Number(ecfg.oldToolChars??2200),cacheChunk:Number(ecfg.cacheChunk??4)});
             this.lastRequestEfficiency=view.stats;this.trace('context.request',{rawChars:view.stats.rawChars,sentChars:view.stats.sentChars,savedTokens:view.stats.savedTokens,outputBudget:outputPlan.tokens,outputClass:outputPlan.class});
             res=await this.client.stream({
               model:this.model,messages:view.messages,tools:toolDefs,signal,maxOutputTokens:outputPlan.tokens,
@@ -143,11 +153,11 @@ export class AgentSession{
         this.lastUsage=res.usage;
         if(res.usage){
           totalThisTurn+=res.usage.total_tokens||0;
-          await this.usage.add(res.usage,this.model);
+          await this.usage.add(res.usage,this.model,res.timing);
           this.events.onUsage?.(res.usage);
         }
         this.messages.push(res.message);
-        this.trace('model.response',{finishReason:res.finishReason||'',usage:res.usage?{prompt_tokens:res.usage.prompt_tokens||0,completion_tokens:res.usage.completion_tokens||0,total_tokens:res.usage.total_tokens||0}:null,responseHash:FlightRecorder.hash(res.message)});
+        this.trace('model.response',{finishReason:res.finishReason||'',timing:res.timing||null,usage:res.usage?{prompt_tokens:res.usage.prompt_tokens||0,completion_tokens:res.usage.completion_tokens||0,total_tokens:res.usage.total_tokens||0}:null,responseHash:FlightRecorder.hash(res.message)});
         this.emitContext();
 
         const calls=res.message.tool_calls||[];
@@ -165,7 +175,7 @@ export class AgentSession{
             this.emitContext();
             continue outer;
           }
-          if(this.mode==='build'&&mutated&&autoVerify&&!verificationPrompted&&!verified){
+          if(this.mode==='build'&&mutated&&codeMutated&&autoVerify&&!verificationPrompted&&!verified){
             verificationPrompted=true;
             this.events.onWarn?.('Edits made · requesting focused verification before finalizing…');
             this.messages.push({role:'user',content:'[Craft Code verification gate] You modified the workspace. Before finalizing, inspect the diff and run the most focused relevant test/lint/typecheck/build command available. If no verification can run, inspect the diff and explain the limitation briefly.'});

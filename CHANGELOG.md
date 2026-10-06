@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.18
+
+Released: 2026-10-06.
+
+- Faster, cheaper long turns: the window of full-size recent tool results now advances in steps (`efficiency.requestContext.cacheChunk`, default 4) instead of sliding by one result per request. Sliding rewrote an earlier message on every step, so providers' prompt-prefix caches could only cover the part of the conversation before it. Requests now share an identical prefix for several consecutive steps, so most of the input can be served from cache with lower latency and cost.
+- Streaming requests now ask for `stream_options.include_usage`, so providers that only report usage on request (OpenAI and many compatible gateways) feed the token meters. Providers that reject the option are detected, retried once without it, and remembered.
+- Each request now records time-to-first-token and total time (also in the flight-recorder `model.response` trace), and the usage tracker records input, output and cached tokens.
+- New `/usage detail` prints this session's requests, input/output/cached tokens with cache-hit rate, and average first-token and response times, so slowness can be attributed to the provider versus Craft Code.
+- The automatic "verify before finalizing" round trip is skipped when every edit in the turn was to documentation (`.md`, `.mdx`, `.rst`, `.adoc`, README/CHANGELOG/LICENSE/CONTRIBUTING/NOTICE). Code edits, edits with unknown paths and everything else still get verified.
+- Added regression tests for cache-stable request prefixes, usage/timing capture, the `stream_options` fallback and docs-only detection.
+
 ## 0.14.17
 
 Released: 2026-10-06.
