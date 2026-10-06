@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.12
+
+Released: 2026-10-06.
+
+- Fixed premature automatic context compaction on large-context models. The old generated `autoCompactChars: 300000` default capped sessions at roughly 75k estimated tokens even when the active model exposed a 1M-token window.
+- Automatic compaction now derives its trigger from the active model's advertised context window, reserving headroom for tool schemas, output, and safety margin.
+- Removed TPM/rate-limit metadata from context-capacity calculations; tokens-per-minute is throughput, not a context-window size.
+- Existing v20 configs carrying the generated 300k-character default migrate in memory to `auto`, so upgrades receive the fix without manual config edits.
+- Numeric `autoCompactChars` remains supported as an explicit advanced override.
+- Added regression coverage ensuring a 1M-context model does not compact near 75k tokens, even when the provider reports a much smaller TPM limit.
+
 ## 0.14.11
 
 Released: 2026-10-06.
