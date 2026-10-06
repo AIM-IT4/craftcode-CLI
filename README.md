@@ -65,6 +65,7 @@ Most coding agents hide at least one important thing: context growth, permission
 | Tokens | Per-request/session/day accounting, lazy schemas, persistent safe-tool cache, provider rate metadata when available, and bounded retry handling |
 | Code intelligence | TypeScript-AST symbols, definitions and references plus compact repository mapping |
 | Runtime | Long-running process handles, project command discovery and credential-free deterministic evals |
+| Trust & replay | Local Flight Recorder, safe session time travel, deterministic Proof of Change and evidence-ranked Patch Arena |
 
 ## What you get
 
@@ -138,6 +139,36 @@ From the shell:
 craftcode continue /path/to/project
 craftcode -c /path/to/project
 ```
+
+### Trust, replay and Patch Arena
+
+Craft Code 0.12 adds a local execution Flight Recorder. It records step order, provider/model identity, context epochs, message boundaries, tool/result hashes, durations and proof metadata. Full tool output is not duplicated into the flight log.
+
+```text
+/proof
+/flight
+/flight show <run-id>
+/replay <run-id> [step]
+```
+
+`/replay` never silently re-executes shell/file actions. It creates a new session fork at the recorded message boundary. If later context compaction destroyed the exact earlier context shape, Craft Code refuses to call that step exact and asks you to replay from a post-compaction boundary.
+
+Proof of Change is deterministic evidence, not model confidence. For build turns it scores observed successful mutations, diff inspection, discovered project-native checks, successful test/lint/typecheck/build commands, clean tool execution and whether the turn actually completed.
+
+Patch Arena works with only the active provider:
+
+```text
+/arena 2 "fix the auth race"
+/arena apply <arena-id> winner
+```
+
+A CodeCraft API key is enough. Craft Code runs independent writer candidates in isolated Git worktrees and ranks valid patches by proof score and then smaller patch size. Users who have additional providers configured can explicitly opt in:
+
+```text
+/arena all 3 "fix the auth race"
+```
+
+Only providers that are already authenticated are considered; missing provider credentials never block the normal CodeCraft-only workflow.
 
 ### Parallel subagents
 
