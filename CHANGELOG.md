@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.2
+
+Released: 2026-10-06.
+
+- Fixed the slash-command palette showing only the first few commands even though the full registry was available.
+- Typing `/` now searches the complete built-in and plugin command registry instead of truncating matches before rendering.
+- The composer keeps a compact seven-row viewport but scrolls it around the selected command with Up/Down.
+- The palette header now shows the visible range and total count, e.g. `Commands · 1–7 of 40 · ↑/↓ scroll`, so hidden commands are discoverable.
+- Added regression coverage ensuring lower commands such as `/arena`, `/doctor` and `/exit` remain reachable and render when selected.
+
 ## 0.14.1
 
 Released: 2026-10-06.
