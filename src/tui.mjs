@@ -266,7 +266,7 @@ export class TerminalTui{
     while(data.length){
       const mm=data.match(/^\x1b\[<\d+;\d+;\d+[Mm]/);if(mm){this.handleMouse(mm[0]);data=data.slice(mm[0].length);continue;}
       if(data.startsWith('\r\n')){this.handleKey('\r');data=data.slice(2);continue;}
-      if(data.startsWith('\x1b[200~')){const e=data.indexOf('\x1b[201~',6);if(e>=0){const p=data.slice(6,e).replace(/\r\n?/g,'\n');this.input=this.input.slice(0,this.cursor)+p+this.input.slice(this.cursor);this.cursor+=p.length;this.schedule();data=data.slice(e+6);continue;}}
+      if(data.startsWith('\x1b[200~')){const e=data.indexOf('\x1b[201~',6);if(e>=0){const p=data.slice(6,e).replace(/\r\n?/g,'\n');this.input=this.input.slice(0,this.cursor)+p+this.input.slice(this.cursor);this.cursor+=p.length;this.suggestionsDismissed=false;this.schedule();data=data.slice(e+6);continue;}}
       const seq=['\x1b[Z','\x1b[1;3A','\x1b[1;3B','\x1b[5~','\x1b[6~','\x1b[A','\x1b[B','\x1b[C','\x1b[D'].find(x=>data.startsWith(x));
       if(seq){this.handleKey(seq);data=data.slice(seq.length);continue;}
       const ch=String.fromCodePoint(data.codePointAt(0));this.handleKey(ch);data=data.slice(ch.length);
