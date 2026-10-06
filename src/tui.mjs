@@ -222,10 +222,12 @@ export class TerminalTui{
   openPicker(type,title,items,current){return new Promise(resolve=>{this.modal={type,title,items,index:Math.max(0,items.findIndex(x=>x.id===current)),filter:'',resolve};this.schedule();});}
   openUsage(){this.modal={type:'usage',title:'Usage',resolve:()=>{}};this.schedule();}
   openInfo(title,text){return new Promise(resolve=>{this.modal={type:'info',title:String(title||'Info'),text:String(text??''),scroll:0,resolve};this.schedule();});}
+  openAuth(title,text,onCancel){return new Promise(resolve=>{this.modal={type:'auth',title:String(title||'Authentication'),text:String(text??''),scroll:0,onCancel,resolve};this.schedule();});}
+  updateAuth(text){if(this.modal?.type!=='auth')return;this.modal.text=String(text??'');this.schedule();}
   modalItems(){if(!this.modal?.items)return[];const q=(this.modal.filter||'').toLowerCase();return q?this.modal.items.filter(x=>`${x.label} ${x.meta||''}`.toLowerCase().includes(q)):this.modal.items;}
   closeModal(v=null){const m=this.modal;if(!m)return;this.modal=null;m.resolve?.(v);this.schedule();}
   dismissTransient(){
-    if(this.modal){this.closeModal(null);return true;}
+    if(this.modal){if(this.modal.type==='auth')this.modal.onCancel?.();this.closeModal(null);return true;}
     if(this.approval){this.resolveApproval(false);return true;}
     if(this.planApproval){this.resolvePlan('dismiss');return true;}
     if(this.selectionMode){this.exitSelectionMode();return true;}
@@ -301,8 +303,9 @@ export class TerminalTui{
     if(s==='\x1b'&&this.dismissTransient())return;
     if(this.modal){
       if(this.modal.type==='usage'){if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();return;}
-      if(this.modal.type==='info'){
-        if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();
+      if(this.modal.type==='info'||this.modal.type==='auth'){
+        if(s==='\x1b'||s==='q'||s==='Q'){if(this.modal.type==='auth')this.modal.onCancel?.();return this.closeModal();}
+        if(this.modal.type==='info'&&s==='\r')return this.closeModal();
         if(s==='\x1b[A'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-1);return this.schedule();}
         if(s==='\x1b[B'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+1);return this.schedule();}
         if(s==='\x1b[5~'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-8);return this.schedule();}
@@ -388,11 +391,11 @@ export class TerminalTui{
         paint('orange','╰'+'─'.repeat(w-2)+'╯')
       ];
     }
-    if(this.modal?.type==='info'){
+    if(this.modal?.type==='info'||this.modal?.type==='auth'){
       const title=this.modal.title||'Info',content=markdownLines(this.modal.text,Math.max(20,w-4)),page=Math.min(14,Math.max(6,Math.floor((process.stdout.rows||34)/3))),maxScroll=Math.max(0,content.length-page),start=Math.max(0,Math.min(maxScroll,this.modal.scroll||0)),end=Math.min(content.length,start+page),shown=content.slice(start,end),o=[paint('orange',`╭─ ${crop(title,Math.max(8,w-12))} ${'─'.repeat(Math.max(1,w-Math.min(w-12,width(title))-5))}╮`)];
       for(const line of shown)o.push(` ${crop(line,w-3)}`);
       if(!shown.length)o.push(` ${paint('dim','(empty)')}`);
-      o.push(` ${paint('dim',`${content.length?start+1:0}–${end} of ${content.length} · ↑/↓ row · PgUp/PgDn page · Enter/Esc/Q close`)}`);
+      o.push(` ${paint('dim',`${content.length?start+1:0}–${end} of ${content.length} · ↑/↓ row · PgUp/PgDn page · ${this.modal?.type==='auth'?'Esc/Q cancel':'Enter/Esc/Q close'}`)}`);
       o.push(paint('orange','╰'+'─'.repeat(w-2)+'╯'));return o;
     }
     if(this.modal){
