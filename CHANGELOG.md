@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.4
+
+Released: 2026-10-06.
+
+- Fixed PageUp/PageDown not navigating the slash-command palette.
+- Added page-sized navigation to slash commands, @file suggestions, provider/model/session/permission pickers, and other picker lists.
+- Corrected info-panel scrolling to open at the top instead of the bottom.
+- Info panels now use conventional navigation: Down/PageDown moves forward; Up/PageUp moves backward.
+- Transcript PageUp/PageDown behavior remains available whenever no palette/picker is consuming the key.
+- Updated palette hints to advertise PageUp/PageDown navigation.
+- Added regression coverage for slash palette, normal pickers, and scrollable info panels.
+
 ## 0.14.3
 
 Released: 2026-10-06.

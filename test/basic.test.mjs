@@ -548,6 +548,26 @@ test('slash palette exposes the full command registry and scrolls selected comma
   assert.match(rendered,/\/exit/);
 });
 
+test('PageUp PageDown navigate slash command palette by a page',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.input='/';tui.cursor=1;
+  const total=tui.commandSuggestions().length;assert.ok(total>14,total);
+  tui.handleKey('\x1b[6~');assert.equal(tui.commandSelection,7);
+  tui.handleKey('\x1b[6~');assert.equal(tui.commandSelection,14);
+  tui.handleKey('\x1b[5~');assert.equal(tui.commandSelection,7);
+  const rendered=tui.renderComposer(110,0).suggestions.join('\n').replace(/\x1b\[[0-9;?]*[ -\\/]*[@-~]/g,'');
+  assert.match(rendered,/PgUp\/PgDn/);
+});
+
+test('PageUp PageDown navigate normal picker lists by a page',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.openPicker('model','Models',Array.from({length:20},(_,i)=>({id:'m'+i,label:'Model '+i})),'m0');
+  tui.handleKey('\x1b[6~');assert.equal(tui.modal?.index,7);
+  tui.handleKey('\x1b[6~');assert.equal(tui.modal?.index,14);
+  tui.handleKey('\x1b[5~');assert.equal(tui.modal?.index,7);
+  tui.closeModal();
+});
+
 test('Escape closes dismissible info panels opened by list commands',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
   tui.openInfo('Providers','● CodeCraft\n○ OpenRouter');
@@ -556,13 +576,15 @@ test('Escape closes dismissible info panels opened by list commands',()=>{
   assert.equal(tui.modal,null);
 });
 
-test('info panels support keyboard scrolling and Enter close',()=>{
+test('info panels use conventional row and page navigation',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
   tui.openInfo('Providers',Array.from({length:40},(_,i)=>`Provider ${i+1}`).join('\n'));
-  tui.handleKey('\x1b[A');
-  assert.equal(tui.modal?.scroll,4);
-  tui.handleKey('\r');
-  assert.equal(tui.modal,null);
+  assert.equal(tui.modal?.scroll,0);
+  tui.handleKey('\x1b[6~');assert.equal(tui.modal?.scroll,8);
+  tui.handleKey('\x1b[B');assert.equal(tui.modal?.scroll,9);
+  tui.handleKey('\x1b[5~');assert.equal(tui.modal?.scroll,1);
+  tui.handleKey('\x1b[A');assert.equal(tui.modal?.scroll,0);
+  tui.handleKey('\r');assert.equal(tui.modal,null);
 });
 
 test('TUI provider metadata can change independently from model',()=>{
@@ -595,7 +617,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.14\.3/);
+  assert.match(stdout,/Craft Code 0\.14\.4/);
   assert.match(stdout,/Provider:/);
 });
 
