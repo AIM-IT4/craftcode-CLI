@@ -1,5 +1,5 @@
 import {compactConversation,estimateTokens,repairConversation} from './context.mjs';
-import {ProofTracker} from './proof.mjs';
+import {ProofTracker,failedResult} from './proof.mjs';
 import {FlightRecorder} from './flight_recorder.mjs';
 
 function systemPrompt({cwd,mode,effort='high',skills,plugins,mcp,pluginContext=[],projectInstructions=[]}){const skillList=skills.list().slice(0,40).map(s=>`${s.name}: ${s.description}`).join('\n'),pluginList=plugins.list().map(p=>`${p.name}${p.active?' (active)':''}: ${p.description||''}`).join('\n'),mcpList=mcp.list().map(s=>`${s.name} (${s.type})`).join(', ');return`You are Craft Code, a precise general coding and research agent working in ${cwd}.
@@ -67,10 +67,10 @@ export class AgentSession{
     try{result=await this.tools.execute(name,args,this.mode,{signal});}
     catch(e){if(e.name==='AbortError')throw e;result={error:String(e.message||e)};}
     const content=typeof result==='string'?result:JSON.stringify(result);
-    const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error);
-    if(isMutating)mutated=true;
+    const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
+    if(isMutating&&!toolFailed)mutated=true;
     if(isVerification)verified=true;
-    proof.tool({name,args,result:content,error:toolError,mutating:isMutating});
+    proof.tool({name,args,result:content,error:toolError,mutating:isMutating&&!toolFailed});
     const durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length});
     this.events.onToolEnd?.({cardId,name,args,result:content,durationMs,error:toolError});
     return{call,content,name,args};
