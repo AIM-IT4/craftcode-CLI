@@ -247,7 +247,7 @@ export class TerminalTui{
   }
   commandSuggestions(){
     if(this.suggestionsDismissed)return[];
-    const before=this.input.slice(0,this.cursor).trimStart();
+    const end=this.cursor>0||!this.input?this.cursor:this.input.length,before=this.input.slice(0,end).trimStart();
     if(!before.startsWith('/')||/\s/.test(before))return[];
     const q=before.toLowerCase(),all=[...COMMANDS,...this.extraCommands],seen=new Set();
     return all.filter(x=>{const k=x.cmd.toLowerCase();if(seen.has(k))return false;seen.add(k);return true;})
