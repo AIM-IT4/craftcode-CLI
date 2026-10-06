@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.13
+
+Released: 2026-10-06.
+
+- Fixed unnecessary pre-response Git checkpoint work in Build mode. Craft Code no longer runs `git stash create` and an untracked-file scan before every model request.
+- Checkpoints are now created lazily immediately before the first mutating file tool or shell/process action in a turn.
+- Read-only questions in Build mode therefore reach the provider without repository-wide checkpoint overhead, improving time-to-first-token on medium and large repositories.
+- Mutation safety and `/undo` behavior remain intact because the checkpoint still exists before the first workspace-changing tool executes.
+- Added regression coverage proving read-only Build turns create no checkpoint and mutating turns create exactly one before execution.
+
 ## 0.14.12
 
 Released: 2026-10-06.
