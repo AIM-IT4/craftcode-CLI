@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.10
+
+Released: 2026-10-06.
+
+- Keeps Spark anchored on the lower-right immediately above the composer while slash-command or file suggestions are visible, provided the terminal has enough vertical room.
+- Preserves the existing responsive fallback: Spark still yields to modal/approval overlays and hides when the terminal cannot fit the mascot without crowding the conversation.
+- Fixed slash-command Enter behavior so the first Enter accepts a partial command and a second Enter executes it, making argument-taking commands easier to complete safely.
+- Fixed stale slash-command selection after bracketed paste, preventing out-of-range completion crashes.
+- Slash search now ranks exact matches before prefixes/fuzzy matches and exposes implemented /models, /disconnect, /checkpoints, /clear, and /config commands in the palette.
+- Composer left/right/backspace now operate on grapheme clusters, so emoji and combined Unicode characters are not split; Home/End and Ctrl+A/Ctrl+E navigation are supported.
+- Added regression coverage for persistent Spark placement, slash completion, paste safety, discoverability, exact-match ranking, and Unicode cursor editing.
 ## 0.14.9
 
 Released: 2026-10-06.
