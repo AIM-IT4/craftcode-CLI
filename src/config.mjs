@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 20,
+  configVersion: 21,
   provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
@@ -22,7 +22,7 @@ const defaults = {
   maxAgentSteps: 20,
   maxTurnSegments: 3,
   maxOutputTokens: 8192,
-  autoCompactChars: 300_000,
+  autoCompactChars: 'auto',
   agentRuntime: {
     parallelTools: true,
     loopGuardRepeats: 3,
@@ -155,10 +155,12 @@ function deepMerge(a, b) {
   }
   return out;
 }
-function migrateLegacyConfig(x={}) {
+export function migrateLegacyConfig(x={}) {
   const y={...x};
   // v0.5 wrote 100M as a generated default. It was not account-derived.
   if (!y.configVersion && y.planTokens === 100_000_000) delete y.planTokens;
+  // <=0.14.11 generated 300k chars (~75k tokens) as a default, which prematurely compacted large-context models.
+  if(Number(y.configVersion||0)<=20&&y.autoCompactChars===300_000)y.autoCompactChars='auto';
   if(y.baseUrl&&!y.providers?.codecraft?.baseUrl)y.providers={...(y.providers||{}),codecraft:{...(y.providers?.codecraft||{}),type:'codecraft',baseUrl:y.baseUrl}};
   return y;
 }
