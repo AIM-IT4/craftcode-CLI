@@ -417,6 +417,7 @@ export class TerminalTui{
         const label=`${glyph(m.name)} ${m.name}${m.detail?` · ${m.detail}`:''}`;
         out.push(`  ${sel?paint('orange','›'):paint('dim','│')} ${st} ${paint(sel?'white':'slate',crop(label,w-16))} ${dur}`);
         if(m.status==='done'&&(m.name==='replace_in_file'||m.name==='write_file'))out.push(...editPreviewLines(m,w));
+        if(m.status==='error'&&!m.expanded){const why=String(m.result||'').split(/\r?\n/).map(x=>x.trim()).find(Boolean);if(why)out.push(`      ${paint('dim','│')} ${paint('red',crop(why,Math.max(20,w-12)))}`);}
         if(m.expanded){const all=wrap(m.result||'(no output)',Math.max(20,w-10));for(const x of all.slice(0,14))out.push(`      ${paint('dim','│')} ${paint('slate',x)}`);if(all.length>14)out.push(`      ${paint('dim','│ … output clipped')}`);}continue;
       }
       if(m.role==='assistant'){const marker=m.status==='streaming'?paint('orange',spinner[this.spinnerIndex]+'   '):paint('orange','●   ');markdownLines(m.text,w-5).forEach((x,j)=>out.push(`${j?'    ':marker}${x}`));continue;}

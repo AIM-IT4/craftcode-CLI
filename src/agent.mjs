@@ -110,7 +110,7 @@ export class AgentSession{
     if(hookContext?.length){this.pluginContext=[...this.pluginContext,...hookContext].slice(-12);this.rebuildSystem();}
 
     const stepLimit=this.stepLimit(),segmentLimit=Math.max(1,Math.min(6,Number(this.config.maxTurnSegments||3)));
-    let completed=false,budgetReached=false,segments=0;
+    let completed=false,budgetReached=false,segments=0,rounds=0,emptyRetried=false;
 
     outer:for(let segment=0;segment<segmentLimit;segment++){
       segments=segment+1;
@@ -151,7 +151,7 @@ export class AgentSession{
             throw e;
           }
         }
-        this.lastUsage=res.usage;
+        this.lastUsage=res.usage;rounds++;
         if(res.usage){
           totalThisTurn+=res.usage.total_tokens||0;
           await this.usage.add(res.usage,this.model,res.timing);
@@ -162,26 +162,39 @@ export class AgentSession{
         this.emitContext();
 
         const calls=res.message.tool_calls||[];
+        if(!calls.length&&!String(res.message.content||'').trim()&&res.finishReason!=='length'){
+          // An empty assistant turn poisons later requests and shows the user nothing: drop it and retry once.
+          this.messages.pop();
+          if(!emptyRetried){
+            emptyRetried=true;
+            this.events.onWarn?.(`Model returned an empty reply (finish: ${res.finishReason||'unknown'}) · retrying once…`);
+            this.messages.push({role:'user',content:'[Craft Code] Your previous reply was empty. Answer the user now, or call a tool if more work is needed.'});
+            this.emitContext();
+            continue;
+          }
+          this.events.onWarn?.(`Model returned an empty reply again (finish: ${res.finishReason||'unknown'}). Try /compact, rephrase, or switch model with /model.`);
+          completed=true;break outer;
+        }
         if(!calls.length){
           if(res.finishReason==='length'){
             this.events.onWarn?.('Output limit reached · continuing automatically…');
             this.messages.push({role:'user',content:'[Craft Code continuation] Continue exactly where the previous response stopped. Do not repeat completed work.'});
             this.emitContext();
-            continue outer;
+            continue;
           }
           if(this.mode==='build'&&mutated&&runtime.autoBrowserVerify!==false&&proof.browserRequired&&!proof.browserVerified&&!browserPrompted){
             browserPrompted=true;
             this.events.onWarn?.('UI/web change detected · running browser verification before finalizing…');
             this.messages.push({role:'user',content:'[Craft Code browser verification gate] UI/web files changed. Before finalizing or pushing, verify the changed behavior in a real browser automatically. Do not ask the user to run /browser. If needed, discover and start the project dev server with discover_project_commands + process_start. Then use list_mcp_tools for server "playwright" and call the minimum Playwright tools needed to navigate the relevant page and capture a browser snapshot or screenshot. Inspect the result for the intended behavior and obvious runtime/console/UI regressions. If browser verification cannot run, state the concrete blocker and do not push.'});
             this.emitContext();
-            continue outer;
+            continue;
           }
           if(this.mode==='build'&&mutated&&codeMutated&&autoVerify&&!verificationPrompted&&!verified){
             verificationPrompted=true;
             this.events.onWarn?.('Edits made · requesting focused verification before finalizing…');
             this.messages.push({role:'user',content:'[Craft Code verification gate] You modified the workspace. Before finalizing, inspect the diff and run the most focused relevant test/lint/typecheck/build command available. If no verification can run, inspect the diff and explain the limitation briefly.'});
             this.emitContext();
-            continue outer;
+            continue;
           }
           completed=true;
           break outer;
@@ -219,7 +232,7 @@ export class AgentSession{
       }
     }
 
-    if(!completed&&!budgetReached&&!stalled)this.events.onWarn?.(`Turn continuation ceiling reached after ${segments*stepLimit} model/tool rounds. The task may be incomplete; send "continue" to resume.`);
+    if(!completed&&!budgetReached&&!stalled)this.events.onWarn?.(`Turn continuation ceiling reached after ${rounds} model/tool rounds. The task may be incomplete; send "continue" to resume.`);
     const hard=this.config.tokenGuard?.hardRequestTokens||0;
     if(hard&&totalThisTurn>hard)this.events.onWarn?.(`This turn consumed ${Math.round(totalThisTurn/1000)}k tokens. Consider /compact or a narrower task.`);
     await this.plugins.hook('session.afterTurn',{usage:this.lastUsage,session:this});

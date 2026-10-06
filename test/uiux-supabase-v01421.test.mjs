@@ -98,3 +98,67 @@ test('supabaseQuery reads with the local key, asks before service role, and scru
   await assert.rejects(supabaseQuery(dir,{action:'tables'},{permit:async()=>true,fetchImpl}),/Refusing to send credentials/);
   await assert.rejects(supabaseQuery(dir,{action:'status',env_file:'../outside.env'}),/./);
 });
+
+import {AgentSession} from '../src/agent.mjs';
+
+const mkSession=(stream,{tools={},config={}}={})=>{
+  const client={maxOutputTokens:4096,rateLimits:{},capabilities:()=>({contextWindow:128000}),stream};
+  const warns=[];
+  const session=new AgentSession({client,model:'m',cwd:process.cwd(),mode:'build',effort:'normal',
+    config:{autoCompactChars:'auto',maxOutputTokens:4096,maxAgentSteps:20,maxTurnSegments:3,tokenGuard:{},efficiency:{},agentRuntime:{autoVerifyEdits:true},...config},
+    usage:{add:async()=>{}},skills:{list:()=>[],autoSelect:async()=>({selected:[],estimatedTokens:0,candidates:0})},
+    plugins:{list:()=>[],hook:async()=>[]},mcp:{list:()=>[]},checkpoints:{begin:async()=>{},finish:async()=>null},
+    tools:{definitions:()=>[],imageSupported:()=>false,isMutating:n=>n==='write_file',isVerification:()=>false,isParallelSafe:()=>false,execute:async()=>'ok',...tools},
+    events:{onWarn:m=>warns.push(m)}});
+  session.events={onWarn:m=>warns.push(m)};
+  session.clear();
+  return {session,warns};
+};
+
+test('empty model replies are dropped from history, retried once, and reported',async()=>{
+  let calls=0;
+  const {session,warns}=mkSession(async()=>{calls++;return{message:{role:'assistant',content:''},usage:{total_tokens:1},finishReason:'stop'};});
+  const r=await session.run('?');
+  assert.equal(calls,2,'one automatic retry');
+  assert.ok(warns.some(w=>/empty reply again/.test(w)));
+  assert.ok(!session.messages.some(m=>m.role==='assistant'&&!m.content&&!m.tool_calls),'no empty assistant turns kept');
+  assert.equal(r.completed,true);
+});
+
+test('empty reply followed by a real answer recovers silently apart from one warning',async()=>{
+  let calls=0;
+  const {session,warns}=mkSession(async({onText})=>{calls++;if(calls===1)return{message:{role:'assistant',content:''},usage:{total_tokens:1},finishReason:'stop'};onText?.('hello');return{message:{role:'assistant',content:'hello'},usage:{total_tokens:1},finishReason:'stop'};});
+  const r=await session.run('hi');
+  assert.equal(r.text,'hello');assert.equal(warns.filter(w=>/empty reply/.test(w)).length,1);
+});
+
+test('verification gates do not consume turn segments or inflate the round count',async()=>{
+  let call=0;
+  const {session,warns}=mkSession(async({onText})=>{
+    call++;
+    if(call===1)return{message:{role:'assistant',content:null,tool_calls:[{id:'c1',type:'function',function:{name:'write_file',arguments:'{"path":"src/a.js","content":"x"}'}}]},usage:{total_tokens:1},finishReason:'tool_calls'};
+    onText?.('done');return{message:{role:'assistant',content:'done'},usage:{total_tokens:1},finishReason:'stop'};
+  });
+  const r=await session.run('write a file');
+  assert.ok(!warns.some(w=>/Long turn/.test(w)),'gate must not look like a long-turn continuation');
+  assert.ok(!warns.some(w=>/ceiling/.test(w)));
+  assert.ok(r.completed);
+});
+
+test('ceiling message reports real rounds, not segments x step limit',async()=>{
+  let call=0;
+  const {session,warns}=mkSession(async()=>{call++;return{message:{role:'assistant',content:null,tool_calls:[{id:`c${call}`,type:'function',function:{name:'read_file',arguments:JSON.stringify({path:`f${call}.txt`})}}]},usage:{total_tokens:1},finishReason:'tool_calls'};},{config:{maxAgentSteps:2,maxTurnSegments:2}});
+  await session.run('loop');
+  const w=warns.find(x=>/ceiling/.test(x));
+  assert.ok(w,'ceiling warning expected');
+  assert.match(w,new RegExp(`after ${call} model/tool rounds`));
+});
+
+test('failed tool cards show the first line of the error without expanding',()=>{
+  const usage={snapshot:()=>({plan:1e6,total:0,session:0,daily:{},byModel:{}}),planTokens:1e6};
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage,showSplash:false,plushie:'off'});tui.schedule=()=>{};
+  const id=tui.toolStart({name:'write_file',detail:'a.html',args:{}});
+  tui.toolEnd({cardId:id,result:'\nEACCES: permission denied, open a.html\nstack…',durationMs:100,error:true});
+  let frame=[];tui.paintFrame=l=>{frame=l;};tui.renderChat();
+  assert.ok(frame.map(x=>String(x).replace(/\x1b\[[0-9;?]*[ -\\/]*[@-~]/g,'')).some(l=>l.includes('EACCES: permission denied')));
+});

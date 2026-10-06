@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.22
+
+Released: 2026-10-06.
+
+- **Fixed: verification gates ate the long-turn budget.** The browser and edit-verification gates each used up one of the three automatic continuation segments, so a turn could stop after ~17 requests with "ceiling reached" and the model never got to answer. Gates now continue within the current segment, and the ceiling message reports the real number of model/tool rounds.
+- **Fixed: silent empty replies.** An empty model response is now dropped from history (it made later turns keep coming back empty), retried once with a nudge, and reported with a clear warning instead of showing nothing.
+- **Failed tool cards now show why.** A failed tool row shows the first line of its error without needing to expand it.
+
 ## 0.14.21
 
 Released: 2026-10-06.
