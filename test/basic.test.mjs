@@ -153,7 +153,35 @@ test('visual styles switch terminal glyph profile without pretending to change f
 });
 
 test('TUI merges installed plugin slash commands into command palette',()=>{
-  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.setExtraCommands([{cmd:'/superpowers:brainstorm',desc:'plugin'}]);tui.input='/super';assert.ok(tui.commandSuggestions().some(x=>x.cmd==='/superpowers:brainstorm'));
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.setExtraCommands([{cmd:'/superpowers:brainstorm',desc:'plugin'}]);tui.input='/super';tui.cursor=tui.input.length;assert.ok(tui.commandSuggestions().some(x=>x.cmd==='/superpowers:brainstorm'));
+});
+
+test('slash palette exposes implemented user-facing commands and ranks exact matches first',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
+  tui.input='/';tui.cursor=1;const all=tui.commandSuggestions().map(x=>x.cmd);
+  for(const cmd of ['/models','/disconnect','/checkpoints','/clear','/config'])assert.ok(all.includes(cmd),`missing ${cmd}`);
+  tui.input='/model';tui.cursor=tui.input.length;assert.equal(tui.commandSuggestions()[0]?.cmd,'/model');
+});
+
+test('Enter accepts a partial slash command before executing it',async()=>{
+  const calls=[],tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,onCommand:async v=>calls.push(v)});tui.schedule=()=>{};tui.running=true;
+  tui.input='/chec';tui.cursor=tui.input.length;
+  await tui.handleKey('\r');assert.equal(tui.input,'/checkpoints');assert.deepEqual(calls,[]);
+  await tui.handleKey('\r');assert.deepEqual(calls,['/checkpoints']);
+});
+
+test('bracketed paste resets stale slash selection and completion stays safe',async()=>{
+  const calls=[],tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,onCommand:async v=>calls.push(v)});tui.schedule=()=>{};tui.running=true;
+  tui.input='/';tui.cursor=1;tui.commandSelection=30;
+  tui.handleData('\x1b[200~chec\x1b[201~');assert.equal(tui.commandSelection,0);
+  await tui.handleKey('\r');assert.equal(tui.input,'/checkpoints');assert.deepEqual(calls,[]);
+});
+
+test('composer cursor and backspace operate on graphemes with Home and End support',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.input='a👩‍💻b';tui.cursor=1;tui.handleKey('\x1b[C');assert.equal(tui.input.slice(0,tui.cursor),'a👩‍💻');
+  tui.handleKey('\x7f');assert.equal(tui.input,'ab');assert.equal(tui.cursor,1);
+  tui.handleKey('\x05');assert.equal(tui.cursor,2);tui.handleKey('\x01');assert.equal(tui.cursor,0);
 });
 
 import { MarketplaceManager } from '../src/marketplace.mjs';
