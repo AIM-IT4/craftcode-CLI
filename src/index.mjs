@@ -22,6 +22,7 @@ import {loadProjectInstructions,initAgentsFile} from './instructions.mjs';
 import {runRuntimeEvals} from './evals.mjs';
 import {FlightRecorder,summarizeFlightEvent} from './flight_recorder.mjs';
 import {formatProof} from './proof.mjs';
+import {activityForThinking,activityAfterTool} from './activity.mjs';
 
 function parseArgs(){
   const a=process.argv.slice(2);let yes=false,cwd=process.cwd(),resume=false,showSplash=true,doctor=false,version=false;
@@ -144,17 +145,16 @@ async function main(){
   const askFn=async q=>{const m=String(q).match(/^([^:]+):\s*(.*)$/s);return tui.askApproval((m?.[1]||'action').toLowerCase(),m?.[2]||q);};
   const agents=new AgentManager({client,model:pickSubagentModel(availableModels,model),cwd,config,usage,skills,plugins,mcp,projectInstructions,events:{onChange:x=>tui?.setAgents(x)}});
   const tools=new ToolRegistry({cwd,config,skills,plugins,mcp,agents,checkpoints,yes,onNotice:()=>{},onTodo:x=>tui?.setTodos(x),askFn,getModelClient:()=>({client,model})});
-  const thinkingWords=['Thinking','Analyzing','Tracing the issue','Checking assumptions','Planning the next step','Looking closer','Connecting the dots','Reviewing the approach','Verifying details','Refining the answer'];
   const events={
-    onTurnStart:()=>tui?.setBusy(true),
-    onThinking:x=>tui?.setActivity(thinkingWords[(x?.step||0)%thinkingWords.length]),
+    onTurnStart:x=>{tui?.setBusy(true);tui?.setActivity(activityForThinking({...x,step:0}));},
+    onThinking:x=>tui?.setActivity(activityForThinking(x)),
     onText:t=>tui?.stream(t),
     onUsage:u=>tui?.setMeta({requestUsage:u}),
     onContext:(n,stats)=>tui?.setMeta({contextChars:n,contextWindowTokens:stats?.contextWindow||0}),
     onWarn:s=>tui?.add('notice',s),
     onAutoSkills:x=>tui?.setNotice(`Auto skills · ${x.names.join(', ')} · ~${fmtTokens(x.estimatedTokens)} tokens`,1800),
     onToolStart:x=>{tui?.setActivity(activityForTool(x));return tui?.toolStart(x);},
-    onToolEnd:x=>{tui?.toolEnd(x);tui?.setActivity('Reviewing results');},
+    onToolEnd:x=>{tui?.toolEnd(x);tui?.setActivity(activityAfterTool({...x,error:x.failed??x.error}));},
     onCancelled:()=>tui?.add('notice','Turn cancelled. Completed edits remain available through /undo.'),
     onCheckpoint:cp=>{tui?.setCheckpoint(cp.id);tui?.setNotice('Checkpoint ready · Undo available',1800);},
     onTrace:x=>recorder?.record(x.type,x),
