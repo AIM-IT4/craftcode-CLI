@@ -15,7 +15,8 @@ import {ProcessManager} from '../src/processes.mjs';
 import {discoverProjectCommands} from '../src/project_commands.mjs';
 import {ToolCache} from '../src/cache.mjs';
 import {runRuntimeEvals} from '../src/evals.mjs';
-import {loadConfig,persistPermissionDecision} from '../src/config.mjs';
+import {AgentSession} from '../src/agent.mjs';
+import {loadConfig,persistPermissionDecision,migrateLegacyConfig} from '../src/config.mjs';
 
 const execFileP=promisify(execFile);
 
@@ -35,6 +36,21 @@ test('allow-always permission decisions persist in workspace config and survive 
     const raw=JSON.parse(await fs.readFile(path.join(dir,'.craftcli','config.json'),'utf8'));
     assert.equal(raw.permissions.write,'allow');
   }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('legacy generated 300k-char compaction default migrates to model-aware auto',()=>{
+  assert.equal(migrateLegacyConfig({configVersion:20,autoCompactChars:300_000}).autoCompactChars,'auto');
+  assert.equal(migrateLegacyConfig({configVersion:21,autoCompactChars:240_000}).autoCompactChars,240_000);
+});
+
+test('1M-context models do not compact around 75k tokens or because of TPM metadata',()=>{
+  const client={maxOutputTokens:8192,rateLimits:{tpmLimit:100_000},capabilities:()=>({contextWindow:1_000_000})};
+  const session=new AgentSession({client,model:'million',cwd:process.cwd(),mode:'build',effort:'high',
+    config:{autoCompactChars:'auto',maxOutputTokens:8192,efficiency:{}},usage:{add:async()=>{}},
+    skills:{list:()=>[]},plugins:{list:()=>[]},mcp:{list:()=>[]},tools:{}});
+  const triggerTokens=Math.floor(session.compactLimit([])/4);
+  assert.ok(triggerTokens>700_000,`expected model-aware trigger >700k tokens, got ${triggerTokens}`);
+  assert.ok(triggerTokens<900_000,`expected safety headroom below full window, got ${triggerTokens}`);
 });
 
 test('semantic index returns AST-backed symbols for TypeScript and TSX',async()=>{
