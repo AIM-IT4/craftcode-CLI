@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.14.7
+
+Released: 2026-10-06.
+
+- Fixed `/connect vercel` handing terminal ownership to the Vercel CLI, which prevented Craft Code from receiving Escape while browser approval was pending.
+- Vercel device authentication now stays inside the active Craft Code TUI in a dedicated live authentication panel.
+- The panel streams Vercel CLI output, surfaces the approval URL as soon as it is emitted, and still best-effort opens that URL in the default browser.
+- Escape or Q now cancels the actual Vercel login process and closes the auth panel cleanly.
+- Enter does not accidentally dismiss an in-progress authentication flow.
+- Windows cancellation terminates the spawned Vercel process tree rather than only hiding UI.
+- Added regression coverage for live auth-panel updates and Escape/Q cancellation.
+
 ## 0.14.6
 
 Released: 2026-10-06.
