@@ -39,3 +39,28 @@ test('Vercel device approval URL is extracted from colored CLI output',()=>{
   const text='\x1b[36mVisit https://vercel.com/oauth/device?user_code=ABCD-EFGH to authorize\x1b[0m';
   assert.equal(extractVercelApprovalUrl(text),'https://vercel.com/oauth/device?user_code=ABCD-EFGH');
 });
+
+
+test('authentication modal stays in TUI, updates live, and Escape cancels it',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:usage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  let cancelled=0;
+  tui.openAuth('Connect Vercel','Starting…',()=>{cancelled++;});
+  assert.equal(tui.modal?.type,'auth');
+  tui.updateAuth('Approval URL\nhttps://vercel.com/oauth/device?user_code=TEST');
+  assert.match(tui.modal?.text||'',/vercel\.com\/oauth\/device/);
+  tui.handleKey('\x1b');
+  assert.equal(cancelled,1);
+  assert.equal(tui.modal,null);
+});
+
+test('authentication modal Q cancels while Enter does not accidentally close it',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:usage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  let cancelled=0;
+  tui.openAuth('Connect Vercel','Waiting…',()=>{cancelled++;});
+  tui.handleKey('\r');
+  assert.equal(tui.modal?.type,'auth');
+  assert.equal(cancelled,0);
+  tui.handleKey('Q');
+  assert.equal(cancelled,1);
+  assert.equal(tui.modal,null);
+});
