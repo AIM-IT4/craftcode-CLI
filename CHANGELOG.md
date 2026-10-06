@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.9
+
+Released: 2026-10-06.
+
+- Added Spark, an original CraftCode terminal plushie rendered on the lower-right immediately above the composer.
+- Spark animates while the agent is working and changes expression for success and tool-error states.
+- Plushie rendering is terminal-cell-width safe and does not use image assets or depend on a specific terminal font.
+- `auto` mode hides Spark on constrained terminals and whenever a modal, picker, command palette, or file-suggestion panel needs the space.
+- Added `/plushie auto|on|off`; the preference persists in the workspace UI configuration.
+- Added regression coverage for right alignment, narrow-terminal auto-hide, working animation, success/error expressions and explicit disable behavior.
+
 ## 0.14.8
 
 Released: 2026-10-06.
