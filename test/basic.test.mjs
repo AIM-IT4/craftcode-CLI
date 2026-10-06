@@ -67,7 +67,7 @@ test('slash commands are normalized and never added to chat transcript',async()=
 test('thinking is represented inline with Claude-style activity copy',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false,uiStyle:'claude'});tui.schedule=()=>{};
   tui.add('user','hello');tui.setBusy(true);assert.equal(tui.transcript.at(-1).role,'thinking');assert.equal(tui.transcript.at(-1).status,'running');
-  let rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/✻ Thinking…/);
+  let rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/◐ Thinking…/);
   tui.setBusy(false);assert.equal(tui.transcript.at(-1).status,'done');
   rendered=tui.transcriptLines(100).join('\n').replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g,'');assert.match(rendered,/✻ Thought/);
 });
@@ -617,7 +617,7 @@ test('observed-only provider usage does not render as Unlimited plan',()=>{
 test('doctor is provider-aware and does not call removed single-provider auth path',async()=>{
   const {fileURLToPath}=await import('node:url');const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const {stdout}=await execFileTest(process.execPath,['src/index.mjs','--doctor'],{cwd:root});
-  assert.match(stdout,/Craft Code 0\.14\.7/);
+  assert.match(stdout,/Craft Code 0\.14\.8/);
   assert.match(stdout,/Provider:/);
 });
 

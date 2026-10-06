@@ -191,7 +191,7 @@ export class TerminalTui{
   setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
     if(v&&!this.busy){this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
-    if(!v&&this.busy){const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}}
+    if(!v&&this.busy){this.finishAssistantStream();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}}
     this.busy=v;this.schedule();
   }
   setActivity(s){const t=[...this.transcript].reverse().find(m=>m.role==='thinking'&&m.status==='running');if(t&&s&&!/^(read_|write_|replace_|run_|git_|list_|search_|call_|update_)/.test(String(s)))t.detail=String(s).replace(/…$/,'');this.schedule();}
@@ -201,11 +201,12 @@ export class TerminalTui{
   setExtraCommands(x=[]){this.extraCommands=(x||[]).map(c=>({cmd:c.cmd,desc:c.desc||'Plugin command'}));this.schedule();}
   setCheckpoint(x){this.lastCheckpoint=x||'';this.schedule();}
   add(role,text,meta={}){const value=String(text??'');if(role==='notice'){const key=value.trim().toLowerCase(),now=Date.now();if(key&&key===this.lastNoticeKey&&now-this.lastNoticeAt<5000)return;this.lastNoticeKey=key;this.lastNoticeAt=now;}this.transcript.push({role,text:value,...meta});if(this.transcript.length>450)this.transcript=this.transcript.slice(-450);this.scrollOffset=0;this.schedule();}
-  beginAssistant(){/* streaming creates its own assistant block on first text */}
-  stream(t){let x=this.transcript.at(-1);if(!x||x.role!=='assistant'){x={role:'assistant',text:''};this.transcript.push(x);}x.text+=t;this.schedule();}
+  beginAssistant(){this.finishAssistantStream();}
+  finishAssistantStream(){const x=[...this.transcript].reverse().find(m=>m.role==='assistant'&&m.status==='streaming');if(x)x.status='done';}
+  stream(t){let x=this.transcript.at(-1);if(!x||x.role!=='assistant'||x.status!=='streaming'){this.finishAssistantStream();x={role:'assistant',text:'',status:'streaming'};this.transcript.push(x);}x.text+=t;this.schedule();}
   replaceTranscript(x=[]){this.transcript=x.map(m=>({...m,text:String(m.text??'')}));this.schedule();}
   getTranscript(){return this.transcript.filter(m=>m.role!=='thinking');}
-  toolStart({name,detail,args}){const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
+  toolStart({name,detail,args}){this.finishAssistantStream();const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
   toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}this.schedule();}
   askApproval(kind,detail){return new Promise(resolve=>{this.approval={kind,detail:String(detail),resolve};this.schedule();});}
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
@@ -358,7 +359,7 @@ export class TerminalTui{
       if(m.role==='notice'){out.push(`  ${paint('yellow','!')} ${paint('slate',crop(m.text,w-5))}`);continue;}
       if(m.role==='thinking'){
         const mark=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).thinking;
-        if(m.status==='running'){out.push(`  ${paint('orange',mark)} ${C.italic}${C.slate}${m.detail||'Thinking'}…${C.reset}`);continue;}
+        if(m.status==='running'){out.push(`  ${paint('orange',spinner[this.spinnerIndex])} ${C.italic}${C.slate}${m.detail||'Thinking'}…${C.reset}`);continue;}
         const dur=m.durationMs?`${Math.max(.1,m.durationMs/1000).toFixed(1)}s`:'';
         out.push(`  ${paint('slate',mark)} ${paint('slate',m.detail||'Thought')}${dur?` ${paint('dim',`for ${dur}`)}`:''}`);continue;
       }
@@ -369,7 +370,7 @@ export class TerminalTui{
         if(m.status==='done'&&(m.name==='replace_in_file'||m.name==='write_file'))out.push(...editPreviewLines(m,w));
         if(m.expanded){const all=wrap(m.result||'(no output)',Math.max(20,w-10));for(const x of all.slice(0,14))out.push(`      ${paint('dim','│')} ${paint('slate',x)}`);if(all.length>14)out.push(`      ${paint('dim','│ … output clipped')}`);}continue;
       }
-      if(m.role==='assistant'){markdownLines(m.text,w-5).forEach((x,j)=>out.push(`${j?'    ':paint('orange','●   ')}${x}`));continue;}
+      if(m.role==='assistant'){const marker=m.status==='streaming'?paint('orange',spinner[this.spinnerIndex]+'   '):paint('orange','●   ');markdownLines(m.text,w-5).forEach((x,j)=>out.push(`${j?'    ':marker}${x}`));continue;}
     }
     return out;
   }

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.8
+
+Released: 2026-10-06.
+
+- Active thinking rows now animate with the same live spinner frames used by running tools instead of showing a static activity glyph.
+- Assistant text blocks now have an explicit streaming state: the leading marker animates while model text is arriving, then freezes to the normal completed marker when a tool begins or the turn ends.
+- Direct image-creation requests are now classified before normal repository exploration.
+- When image generation is supported, Craft Code exposes only `generate_image` for that direct image turn, preventing accidental fallback to file writes, shell commands, repository searches, or helper scripts.
+- When the active provider/model does not advertise image-generation capability, Craft Code returns immediately with a capability message and leaves the workspace unchanged.
+- Craft Code will not create Python/JavaScript image-generation helpers, install graphics libraries, or modify project code as a fallback unless the user explicitly asks to build image-generation code.
+- Generated images no longer trigger code-test verification gates simply because the image file is a workspace mutation.
+- Added regression coverage for animated thinking/assistant markers, media-intent classification, unsupported-image fast paths, and generate-image-only tool routing.
+
 ## 0.14.7
 
 Released: 2026-10-06.
