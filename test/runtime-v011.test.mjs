@@ -53,6 +53,32 @@ test('1M-context models do not compact around 75k tokens or because of TPM metad
   assert.ok(triggerTokens<900_000,`expected safety headroom below full window, got ${triggerTokens}`);
 });
 
+test('build-mode read-only turns do not create a Git checkpoint before first response',async()=>{
+  let begins=0,finishes=0;
+  const client={maxOutputTokens:4096,rateLimits:{},capabilities:()=>({contextWindow:128000}),stream:async({onText})=>{onText?.('ok');return{message:{role:'assistant',content:'ok'},usage:{total_tokens:10},finishReason:'stop'};}};
+  const checkpoints={begin:async()=>{begins++;},finish:async()=>{finishes++;return null;}};
+  const plugins={list:()=>[],hook:async()=>[]};
+  const tools={definitions:()=>[],imageSupported:()=>false,isMutating:()=>false,isVerification:()=>false};
+  const session=new AgentSession({client,model:'m',cwd:process.cwd(),mode:'build',effort:'normal',
+    config:{autoCompactChars:'auto',maxOutputTokens:4096,maxAgentSteps:2,maxTurnSegments:1,tokenGuard:{},efficiency:{},agentRuntime:{autoVerifyEdits:false}},
+    usage:{add:async()=>{}},skills:{list:()=>[],autoSelect:async()=>({selected:[],estimatedTokens:0,candidates:0})},plugins,mcp:{list:()=>[]},tools,checkpoints});
+  session.clear();const r=await session.run('explain this code');
+  assert.equal(r.completed,true);assert.equal(begins,0);assert.equal(finishes,1);
+});
+
+test('checkpoint is created immediately before the first mutating tool and only once per turn',async()=>{
+  let begins=0,executes=0,call=0,begun=false;
+  const client={maxOutputTokens:4096,rateLimits:{},capabilities:()=>({contextWindow:128000}),stream:async()=>{call++;if(call===1)return{message:{role:'assistant',content:null,tool_calls:[{id:'c1',type:'function',function:{name:'write_file',arguments:'{"path":"a.txt","content":"x"}'}}]},usage:{total_tokens:10},finishReason:'tool_calls'};return{message:{role:'assistant',content:'done'},usage:{total_tokens:10},finishReason:'stop'};}};
+  const checkpoints={begin:async()=>{begins++;begun=true;},finish:async()=>null};
+  const plugins={list:()=>[],hook:async()=>[]};
+  const tools={definitions:()=>[],imageSupported:()=>false,isMutating:n=>n==='write_file',isVerification:()=>false,execute:async()=>{assert.equal(begun,true);executes++;return'Wrote a.txt';}};
+  const session=new AgentSession({client,model:'m',cwd:process.cwd(),mode:'build',effort:'normal',
+    config:{autoCompactChars:'auto',maxOutputTokens:4096,maxAgentSteps:3,maxTurnSegments:1,tokenGuard:{},efficiency:{},agentRuntime:{autoVerifyEdits:false}},
+    usage:{add:async()=>{}},skills:{list:()=>[],autoSelect:async()=>({selected:[],estimatedTokens:0,candidates:0})},plugins,mcp:{list:()=>[]},tools,checkpoints});
+  session.clear();await session.run('change a file');
+  assert.equal(begins,1);assert.equal(executes,1);
+});
+
 test('semantic index returns AST-backed symbols for TypeScript and TSX',async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'craft-semantic-'));
   try{
