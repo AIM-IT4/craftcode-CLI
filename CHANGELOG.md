@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.15
+
+Released: 2026-10-06.
+
+- Fixed Windows browser OAuth URLs being truncated at `&` when Craft Code launched them through `cmd /c start`.
+- Supabase authorization URLs now reach the browser with `client_id`, `redirect_uri`, PKCE challenge, state, scope, and resource parameters intact.
+- Windows now opens OAuth URLs through the registered URL handler directly with `rundll32.exe url.dll,FileProtocolHandler`, avoiding `cmd.exe` metacharacter parsing.
+- Added a Windows regression test using a Supabase-style authorization URL to ensure query parameters survive unchanged.
+- This specifically fixes browser errors such as `client_id: ... received undefined, redirect_uri: ... received undefined`.
+
 ## 0.14.14
 
 Released: 2026-10-06.
