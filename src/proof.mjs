@@ -18,7 +18,7 @@ export class ProofTracker{
   constructor({goal='',mode='build'}={}){this.goal=clip(goal,300);this.mode=mode;this.mutations=[];this.diffReviewed=false;this.discovered=false;this.verifications=[];this.toolErrors=[];this.startedAt=Date.now();this.report=null;}
   tool({name,args={},result='',error=false,mutating=false}={}){
     const failed=failedResult(result,error);
-    if(mutating)this.mutations.push({tool:name,target:clip(args.path||args.from||args.to||'',160)});
+    if(mutating&&!failed)this.mutations.push({tool:name,target:clip(args.path||args.from||args.to||'',160)});
     if(name==='git_diff')this.diffReviewed=true;
     if(name==='discover_project_commands')this.discovered=true;
     if(name==='run_command'){
