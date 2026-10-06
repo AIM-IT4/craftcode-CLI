@@ -37,6 +37,13 @@ CLI authentication:
 - `/arena all [2-6] <task>` — optionally include any other already-authenticated providers
 - `/arena apply <arena-id> [candidate]` — permission-gated application of the winner or selected candidate
 
+## Automatic capabilities
+
+- Relevant skills are auto-selected per task within the workspace skill token budget; manual skill commands are optional fallback controls.
+- `generate_image` is an agent tool rather than a slash command and appears only when the active API exposes image-generation capability.
+- UI/web edits automatically trigger Playwright verification before completion/push when browser verification is enabled.
+- `/proof` reports whether browser verification was required and completed.
+
 ## Runtime evaluation
 
 - `craftcode eval runtime` — credential-free checks for semantic lookup, shell policy, process lifecycle, command discovery and persistent cache
