@@ -548,6 +548,23 @@ test('slash palette exposes the full command registry and scrolls selected comma
   assert.match(rendered,/\/exit/);
 });
 
+test('Escape closes dismissible info panels opened by list commands',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.openInfo('Providers','● CodeCraft\n○ OpenRouter');
+  assert.equal(tui.modal?.type,'info');
+  tui.handleKey('\x1b');
+  assert.equal(tui.modal,null);
+});
+
+test('info panels support keyboard scrolling and Enter close',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.openInfo('Providers',Array.from({length:40},(_,i)=>`Provider ${i+1}`).join('\n'));
+  tui.handleKey('\x1b[A');
+  assert.equal(tui.modal?.scroll,4);
+  tui.handleKey('\r');
+  assert.equal(tui.modal,null);
+});
+
 test('TUI provider metadata can change independently from model',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),provider:'codecraft',model:'cc-model',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
   tui.setMeta({provider:'openrouter',model:'or-model'});
