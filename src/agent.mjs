@@ -103,8 +103,10 @@ export class AgentSession{
         let res,contextRetried=false,sequenceRetried=false;
         while(true){
           try{
+            const ecfg=this.config.efficiency?.requestContext||{},view=optimizeRequestMessages(this.messages,{recentTools:Number(ecfg.recentToolResults??6),oldToolChars:Number(ecfg.oldToolChars??2200)});
+            this.lastRequestEfficiency=view.stats;this.trace('context.request',{rawChars:view.stats.rawChars,sentChars:view.stats.sentChars,savedTokens:view.stats.savedTokens,outputBudget:outputPlan.tokens,outputClass:outputPlan.class});
             res=await this.client.stream({
-              model:this.model,messages:this.messages,tools:toolDefs,signal,
+              model:this.model,messages:view.messages,tools:toolDefs,signal,maxOutputTokens:outputPlan.tokens,
               onText:t=>{finalText+=t;this.events.onText?.(t);}
             });
             break;
