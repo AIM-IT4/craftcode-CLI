@@ -58,3 +58,12 @@ Saved sessions remain the source of truth for conversation content. Replay forks
 The runtime keeps capability decisions deterministic where possible. Skill routing scores only local skill metadata and loads the highest-relevance skills that fit the configured count/token budget. Provider image generation is exposed only when model metadata or explicit provider configuration confirms support; image bytes bypass conversation context and are written directly to the workspace.
 
 UI/web mutations are tracked by ProofTracker. Before finalization, AgentSession injects a browser-verification gate when a changed path is classified as a UI surface. Playwright tool discovery is lazy. Read-only snapshots, screenshots, console/network inspection and localhost navigation can run automatically; state-changing interactions still use the ordinary permission layer. A git push attempted before required browser evidence is blocked inside the agent loop.
+
+
+## Context Efficiency Engine
+
+The saved session remains the durable source of truth, but each provider request is derived through a lean evidence view. Recent tool messages are retained, older tool payloads are bounded, and repeated content is replaced by a content-hash reference. Large command output is reduced toward failure/assertion/summary/tail evidence before entering conversation history. This reduces provider input without deleting the local turn structure.
+
+Compaction is evidence-pinned: recent genuine user requirements, mutated paths, verification outcomes and browser evidence are explicitly carried into the compacted system summary. Auto-selected skills use a prompt-normalized copy that removes frontmatter/comments/redundant whitespace without changing the instruction body.
+
+Output efficiency is independent from reasoning depth. Per-request max output is selected conservatively from task complexity, final prose is compact by default, subagent narrative injection is bounded, and `apply_patch` provides a lower-token edit path for localized multi-line changes. Verification gates remain unchanged.
