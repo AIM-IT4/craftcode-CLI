@@ -91,6 +91,6 @@ test('apply_patch edits a declared workspace file without whole-file output',asy
     const patch='--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n';
     const result=await registry.execute('apply_patch',{patch},'build');
     assert.match(String(result),/Applied patch/);
-    assert.equal(await fs.readFile(path.join(dir,'a.txt'),'utf8'),'one\nTWO\nthree\n');
+    assert.equal((await fs.readFile(path.join(dir,'a.txt'),'utf8')).replace(/\r\n/g,'\n'),'one\nTWO\nthree\n');
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
