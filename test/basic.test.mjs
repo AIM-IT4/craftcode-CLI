@@ -534,6 +534,20 @@ test('Escape dismisses approval and plan dialogs consistently',async()=>{
   const plan=tui.askPlanApproval();tui.handleKey('\x1b');assert.equal(await plan,'dismiss');assert.equal(tui.planApproval,null);
 });
 
+test('slash palette exposes the full command registry and scrolls selected commands into view',()=>{
+  const tui=new TerminalTui({cwd:process.cwd(),model:'m',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};tui.running=true;
+  tui.input='/';tui.cursor=1;
+  const all=tui.commandSuggestions();
+  assert.ok(all.length>=35,all.length);
+  assert.ok(all.some(x=>x.cmd==='/arena'));
+  assert.ok(all.some(x=>x.cmd==='/doctor'));
+  assert.ok(all.some(x=>x.cmd==='/exit'));
+  tui.commandSelection=all.findIndex(x=>x.cmd==='/exit');
+  const rendered=tui.renderComposer(110,0).suggestions.join('\n').replace(/\x1b\[[0-9;?]*[ -\\/]*[@-~]/g,'');
+  assert.match(rendered,/of \d+/);
+  assert.match(rendered,/\/exit/);
+});
+
 test('TUI provider metadata can change independently from model',()=>{
   const tui=new TerminalTui({cwd:process.cwd(),provider:'codecraft',model:'cc-model',mode:'build',usage:fakeUsage(),showSplash:false});tui.schedule=()=>{};
   tui.setMeta({provider:'openrouter',model:'or-model'});
