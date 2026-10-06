@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.20
+
+Released: 2026-10-06.
+
+- `/usage detail` now reads Anthropic-style cache fields (`cache_read_input_tokens`, `cache_creation_input_tokens`) as well as OpenAI/DeepSeek-style ones, so Claude-family models behind OpenAI-compatible gateways no longer show a misleading 0% cache-hit rate when the provider does report caching. Cache writes are shown when reported, and the no-cache-data message now says what it means.
+
 ## 0.14.19
 
 Released: 2026-10-06.

@@ -92,3 +92,11 @@ test('command palette lists /usage detail next to /usage so it is discoverable',
   const cmds=tui.commandSuggestions().map(x=>x.cmd);
   assert.deepEqual(cmds.slice(0,2),['/usage','/usage detail']);
 });
+
+test('usage tracker understands Anthropic-style cache fields',async()=>{
+  const u=new UsageTracker(1_000_000,1);u.state={total:0,daily:{},byModel:{}};u.save=async()=>{};
+  await u.add({prompt_tokens:2000,completion_tokens:10,total_tokens:2010,cache_read_input_tokens:1500,cache_creation_input_tokens:300},'claude');
+  await u.add({prompt_tokens:1000,completion_tokens:10,total_tokens:1010,prompt_tokens_details:{cached_tokens:700,cache_write_tokens:50}},'other');
+  const d=u.snapshot().detail;
+  assert.equal(d.cached,2200);assert.equal(d.written,350);
+});

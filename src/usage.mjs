@@ -12,7 +12,7 @@ const monthKeyFor = (resetDay) => {
 };
 
 export class UsageTracker {
-  constructor(planTokens, resetDay) { this.planTokens = planTokens; this.resetDay = resetDay; this.state = null; this.session = 0; this.detail = { requests: 0, prompt: 0, completion: 0, cached: 0, ttfbMs: 0, totalMs: 0, timed: 0 }; }
+  constructor(planTokens, resetDay) { this.planTokens = planTokens; this.resetDay = resetDay; this.state = null; this.session = 0; this.detail = { requests: 0, prompt: 0, completion: 0, cached: 0, written: 0, ttfbMs: 0, totalMs: 0, timed: 0 }; }
   async load() {
     await fs.mkdir(APP_DIR, { recursive: true });
     let s = {};
@@ -26,7 +26,9 @@ export class UsageTracker {
   async add(usage = {}, model = 'unknown', timing = null) {
     const n = Number(usage.total_tokens || 0);
     const d = this.detail; d.requests += 1; d.prompt += Number(usage.prompt_tokens || 0); d.completion += Number(usage.completion_tokens || 0);
-    d.cached += Number(usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0);
+    // OpenAI-style, DeepSeek-style and Anthropic-style cache-hit fields, in that order of preference.
+    d.cached += Number(usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens ?? usage.prompt_cache_hit_tokens ?? usage.cache_read_input_tokens ?? 0);
+    d.written += Number(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_write_tokens ?? 0);
     if (timing?.totalMs) { d.timed += 1; d.ttfbMs += Number(timing.firstTokenMs ?? timing.ttfbMs ?? 0); d.totalMs += Number(timing.totalMs || 0); }
     if (!n) return;
     this.state.total += n; this.session += n;

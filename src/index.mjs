@@ -109,7 +109,7 @@ async function vercelBrowserLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.19');return;}
+  if(version){console.log('Craft Code 0.14.20');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -122,7 +122,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.19');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.20');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -276,7 +276,7 @@ async function main(){
         if(rest[0]==='add'){await usage.seed(Number(rest[1]));return tui.setNotice('Usage seeded.');}
         if(rest[0]==='set'){await usage.set(Number(rest[1]));return tui.setNotice('Usage reconciled.');}
         if(rest[0]==='plan'){const n=parseTokenAmount(rest[1]);if(!n)return tui.add('notice','Use /usage plan 30m (or another token amount).');usage.planTokens=n;tui.setMeta({planTokens:n,planSource:'manual'});return tui.setNotice(`Plan display · ${fmtTokens(n)}`);}
-        if(rest[0]==='detail'){const d=usage.snapshot().detail||{},pct=d.prompt?Math.round(100*d.cached/d.prompt):0,avg=d.timed?Math.round(d.totalMs/d.timed):0,first=d.timed?Math.round(d.ttfbMs/d.timed):0;return tui.add('notice',`This session: ${d.requests||0} model requests · input ${fmtTokens(d.prompt||0)} (cached ${fmtTokens(d.cached||0)}${d.prompt?` · ${pct}%`:''}) · output ${fmtTokens(d.completion||0)}${d.timed?` · avg first token ${first}ms · avg response ${avg}ms`:''}${d.cached===0&&d.prompt?'\nNo cached-token data reported by this provider/model.':''}`);}
+        if(rest[0]==='detail'){const d=usage.snapshot().detail||{},pct=d.prompt?Math.round(100*d.cached/d.prompt):0,avg=d.timed?Math.round(d.totalMs/d.timed):0,first=d.timed?Math.round(d.ttfbMs/d.timed):0;return tui.add('notice',`This session: ${d.requests||0} model requests · input ${fmtTokens(d.prompt||0)} (cached ${fmtTokens(d.cached||0)}${d.prompt?` · ${pct}%`:''}${d.written?` · cache writes ${fmtTokens(d.written)}`:''}) · output ${fmtTokens(d.completion||0)}${d.timed?` · avg first token ${first}ms · avg response ${avg}ms`:''}${d.cached===0&&!d.written&&d.prompt?'\nNo cache hits reported: this provider/model is not caching the prompt prefix, or does not report it.':''}`);}
         tui.openUsage();return;
       }
       if(cmd==='/skills'){
