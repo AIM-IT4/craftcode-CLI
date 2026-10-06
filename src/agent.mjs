@@ -51,7 +51,7 @@ export class AgentSession{
   if(estChars(this.messages)>this.compactLimit())this.autoCompact([],'auto',false);
 
   let finalText='',totalThisTurn=0;
-  let mutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false,lastToolName='',lastToolFailed=false;
+  let mutated=false,verified=false,verificationPrompted=false,browserPrompted=false,stalled=false,lastToolName='',lastToolFailed=false,checkpointStarted=false;
   const proof=new ProofTracker({goal:userText,mode:this.mode});
   let lastBatchFingerprint='',repeatBatchCount=0;
   const runtime=this.config.agentRuntime||{};
@@ -70,12 +70,13 @@ export class AgentSession{
     const text='The active provider/model does not advertise image-generation capability. I did not search the repository, create Python/JS helpers, install libraries, or modify project files. Switch to an image-capable model/provider or ask explicitly if you want image-generation code.';
     this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'unsupported-image',proof:proofReport});this.running=false;this.controller=null;this.events.onTurnEnd?.();return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
   }
-  if(this.mode==='build'&&this.checkpoints)await this.checkpoints.begin(String(userText).slice(0,80));
+  const checkpointLabel=String(userText).slice(0,80);
 
   const parseArgs=call=>{try{return JSON.parse(call.function.arguments||'{}');}catch{return{_raw:call.function.arguments};}};
   const runTool=async(call,args)=>{
     if(signal.aborted)throw new DOMException('Aborted','AbortError');
-    const name=call.function.name,started=Date.now();
+    const name=call.function.name,started=Date.now(),isMutatingTool=!!this.tools.isMutating?.(name),mayMutateViaShell=name==='run_command'||name==='process_start';
+    if(this.mode==='build'&&this.checkpoints&&!checkpointStarted&&(isMutatingTool||mayMutateViaShell)){await this.checkpoints.begin(checkpointLabel);checkpointStarted=true;}
     const toolDetail=detail(args);this.trace('tool.start',{name,detail:toolDetail,callId:call.id,argsHash:FlightRecorder.hash(args)});
     const cardId=this.events.onToolStart?.({name,args,detail:toolDetail,callId:call.id});
     let result;
@@ -83,7 +84,7 @@ export class AgentSession{
     else try{result=await this.tools.execute(name,args,this.mode,{signal});}
     catch(e){if(e.name==='AbortError')throw e;result={error:String(e.message||e)};}
     const content=typeof result==='string'?result:JSON.stringify(result);
-    const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
+    const isMutating=isMutatingTool,isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
     if(isMutating&&!toolFailed&&name!=='generate_image')mutated=true;
     if(isVerification&&!toolFailed)verified=true;
     proof.tool({name,args,result:content,error:toolError,mutating:isMutating&&!toolFailed});
