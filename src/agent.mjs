@@ -64,11 +64,11 @@ export class AgentSession{
   const imageAvailable=!!this.tools.imageSupported?.();
   if(directImageIntent&&this.mode!=='build'){
     const text='Image generation requires Build mode. I did not modify the workspace or create a fallback script.';
-    this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'blocked',proof:proofReport});return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
+    this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'blocked',proof:proofReport});this.running=false;this.controller=null;this.events.onTurnEnd?.();return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
   }
   if(directImageIntent&&!imageAvailable){
     const text='The active provider/model does not advertise image-generation capability. I did not search the repository, create Python/JS helpers, install libraries, or modify project files. Switch to an image-capable model/provider or ask explicitly if you want image-generation code.';
-    this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'unsupported-image',proof:proofReport});return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
+    this.messages.push({role:'assistant',content:text});this.events.onText?.(text);const proofReport=proof.finish({completed:false,cancelled:false,stalled:false});this.lastProof=proofReport;this.trace('turn.end',{status:'unsupported-image',proof:proofReport});this.running=false;this.controller=null;this.events.onTurnEnd?.();return{text,usage:null,totalThisTurn:0,cancelled:false,completed:false,stalled:false,verified:false,proof:proofReport};
   }
   if(this.mode==='build'&&this.checkpoints)await this.checkpoints.begin(String(userText).slice(0,80));
 
