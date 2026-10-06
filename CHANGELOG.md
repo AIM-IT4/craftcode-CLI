@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.14.16
+
+Released: 2026-10-06.
 
 - Spark is now a richer, always-alive mascot: a 5-row sprite (effects row plus 4 body rows) in its own `src/plushie.mjs` module.
 - Idle animation: Spark blinks, glances sideways, shuffles its feet and twinkles its antenna even when the agent is not busy; it dozes off (`z Z Z`) after 45s without activity and wakes on any key press or new turn.
