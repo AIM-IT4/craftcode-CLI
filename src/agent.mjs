@@ -56,6 +56,7 @@ export class AgentSession{
   const parallelTools=runtime.parallelTools!==false;
   const loopLimit=Math.max(2,Number(runtime.loopGuardRepeats||3));
   const autoVerify=runtime.autoVerifyEdits!==false;
+  const outputPlan=outputBudgetForTask({text:userText,mode:this.mode,effort:this.effort,maxOutputTokens:this.client.maxOutputTokens||this.config.maxOutputTokens||8192,config:this.config.efficiency||{}});this.lastOutputPlan=outputPlan;
 
   this.events.onTurnStart?.();
   if(this.mode==='build'&&this.checkpoints)await this.checkpoints.begin(String(userText).slice(0,80));
@@ -73,11 +74,11 @@ export class AgentSession{
     const content=typeof result==='string'?result:JSON.stringify(result);
     const isMutating=!!this.tools.isMutating?.(name),isVerification=!!this.tools.isVerification?.(name,args),toolError=!!(typeof result==='object'&&result?.error),toolFailed=failedResult(content,toolError);
     if(isMutating&&!toolFailed)mutated=true;
-    if(isVerification)verified=true;
+    if(isVerification&&!toolFailed)verified=true;
     proof.tool({name,args,result:content,error:toolError,mutating:isMutating&&!toolFailed});
-    const durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length});
+    const reduced=this.evidenceLedger.reduce(name,args,content),durationMs=Date.now()-started;this.trace('tool.end',{name,callId:call.id,durationMs,error:toolError,resultHash:FlightRecorder.hash(content),resultChars:content.length,contextChars:reduced.content.length,duplicate:!!reduced.duplicate});
     this.events.onToolEnd?.({cardId,name,args,result:content,durationMs,error:toolError});
-    return{call,content,name,args};
+    return{call,content:reduced.content,name,args};
   };
 
   try{
