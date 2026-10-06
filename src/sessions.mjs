@@ -8,16 +8,17 @@ const idFor = cwd => crypto.createHash('sha1').update(path.resolve(cwd)).digest(
 const safeStamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 const cleanTitle = s => String(s||'').replace(/\s+/g,' ').trim().slice(0,72);
 const titleFromTranscript = t => cleanTitle((t||[]).find(x=>x.role==='user')?.text)||'Untitled session';
+const transcriptFromMessages=m=>(m||[]).filter(x=>x&&['user','assistant'].includes(x.role)&&typeof x.content==='string'&&x.content&&!/^\[Craft Code /.test(x.content)).map(x=>({role:x.role,text:x.content}));
 
 export class SessionStore {
   constructor(cwd){this.cwd=path.resolve(cwd);this.workspaceId=idFor(cwd);this.dir=path.join(ROOT,this.workspaceId);this.currentId=`s-${safeStamp()}`;this.currentTitle='';}
   async init(){await fs.mkdir(this.dir,{recursive:true});return this;}
   file(id){return path.join(this.dir,`${id}.json`);}
-  async save({provider='codecraft',messages,transcript,model,mode,effort,title}){
+  async save({provider='codecraft',messages,transcript,model,mode,effort,title,proof=null,lastRunId=''}){
     await this.init();
     let old={};try{old=JSON.parse(await fs.readFile(this.file(this.currentId),'utf8'));}catch{}
     const now=new Date().toISOString(),derived=cleanTitle(title||this.currentTitle)||titleFromTranscript(transcript);
-    const payload={version:3,id:this.currentId,title:derived,cwd:this.cwd,createdAt:old.createdAt||now,updatedAt:now,provider:provider||'codecraft',model,mode,effort,messages,transcript};
+    const payload={version:4,id:this.currentId,title:derived,cwd:this.cwd,createdAt:old.createdAt||now,updatedAt:now,provider:provider||'codecraft',model,mode,effort,messages,transcript,proof:proof??old.proof??null,lastRunId:lastRunId||old.lastRunId||''};
     await fs.writeFile(this.file(this.currentId),JSON.stringify(payload,null,2));
     await fs.writeFile(path.join(this.dir,'latest'),this.currentId,'utf8');
     this.currentTitle=derived;return this.currentId;
@@ -43,6 +44,14 @@ export class SessionStore {
   async remove(ref){const id=await this.resolve(ref);if(!id)return false;await fs.rm(this.file(id),{force:true});const latest=await this.latestId();if(latest===id){const rows=await this.list();if(rows[0])await fs.writeFile(path.join(this.dir,'latest'),rows[0].id,'utf8');else await fs.rm(path.join(this.dir,'latest'),{force:true});}if(this.currentId===id)this.fresh();return true;}
   async fork(ref='latest'){
     const s=await this.load(ref);if(!s)return null;const source=s.id;this.fresh();this.currentTitle=`${s.title||titleFromTranscript(s.transcript)} (fork)`;await this.save({...s,title:this.currentTitle});const out=await this.load(this.currentId);out.forkedFrom=source;await fs.writeFile(this.file(out.id),JSON.stringify(out,null,2));return out;
+  }
+  async forkPrefix(ref='latest',messageCount=0,{title=''}={}){
+    const s=await this.load(ref);if(!s)return null;const source=s.id,count=Math.max(1,Math.min(Number(messageCount)||1,(s.messages||[]).length));
+    const messages=(s.messages||[]).slice(0,count),transcript=transcriptFromMessages(messages);this.fresh();
+    this.currentTitle=cleanTitle(title)||`${s.title||titleFromTranscript(s.transcript)} (replay)`;
+    await this.save({...s,messages,transcript,title:this.currentTitle,lastRunId:'',proof:null});
+    const out=await this.load(this.currentId);out.forkedFrom=source;out.replayMessageCount=count;out.updatedAt=new Date().toISOString();
+    await fs.writeFile(this.file(out.id),JSON.stringify(out,null,2));return out;
   }
   async exportMarkdown(ref='latest',dest=''){
     const s=await this.load(ref);if(!s)return null;const file=dest||path.join(this.cwd,`.craft-session-${s.id}.md`);const lines=[`# ${s.title||'Craft Code session'}`,'',`- Session: \`${s.id}\``,`- Workspace: \`${s.cwd}\``,`- Provider: \`${s.provider||'codecraft'}\``,`- Model: \`${s.model||''}\``,`- Updated: ${s.updatedAt}`,''];for(const m of s.transcript||[]){if(!['user','assistant','notice'].includes(m.role))continue;lines.push(`## ${m.role==='user'?'You':m.role==='assistant'?'Craft Code':'Notice'}`,'',String(m.text||''),'');}await fs.writeFile(file,lines.join('\n'),'utf8');return file;

@@ -33,6 +33,9 @@ CLI authentication:
 - `/agent spawn <role> <task>`
 - `/team [count] <task>`
 - `/orchestrate <task>` — planner → dependency-aware read-only workers → reviewer
+- `/arena [2-6] <task>` — run independent isolated candidates using the active provider; CodeCraft alone is sufficient
+- `/arena all [2-6] <task>` — optionally include any other already-authenticated providers
+- `/arena apply <arena-id> [candidate]` — permission-gated application of the winner or selected candidate
 
 ## Runtime evaluation
 
@@ -43,6 +46,10 @@ CLI authentication:
 - `/status`
 - `/context` — context composition, model-window pressure and automatic compaction thresholds
 - `/doctor` — check provider, model, message-protocol and context health
+- `/proof` — show deterministic Proof-of-Change evidence for the latest turn
+- `/flight` — list recent local execution recordings
+- `/flight show <run-id>` — inspect a recorded step timeline
+- `/replay <run-id> [step]` — fork the saved session at a replayable recorded boundary
 - `/compact` — compact older session history while preserving recent work
 - `/init`
 - `/instructions`

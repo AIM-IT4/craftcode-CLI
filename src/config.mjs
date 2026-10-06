@@ -6,7 +6,7 @@ export const APP_DIR = path.join(os.homedir(), '.craftcli');
 export const GLOBAL_CONFIG = path.join(APP_DIR, 'config.json');
 
 const defaults = {
-  configVersion: 16,
+  configVersion: 17,
   provider: process.env.CRAFTCODE_PROVIDER || 'codecraft',
   baseUrl: 'https://codecraftapi.com/v1',
   model: process.env.CODECRAFT_MODEL || '',
@@ -63,6 +63,18 @@ const defaults = {
     maxSteps: 8,
     maxOrchestrationTasks: 6,
     keepWorktrees: false
+  },
+  flightRecorder: {
+    enabled: true,
+    maxRuns: 120
+  },
+  proof: {
+    enabled: true
+  },
+  arena: {
+    defaultCandidates: 2,
+    maxCandidates: 4,
+    useOtherProvidersByDefault: false
   },
   claudePlugins: {
     enabled: true,

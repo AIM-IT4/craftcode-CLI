@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.0
+
+Released: 2026-10-06.
+
+- Added a local Flight Recorder for agent execution timelines. Runs capture provider/model identity, step sequencing, context epochs, tool/result hashes, durations and proof metadata without duplicating full tool output.
+- Added safe time-travel replay with `/flight` and `/replay`. Replay forks the saved session at an exact recorded message boundary; it refuses pre-compaction steps when the original context can no longer be reconstructed exactly.
+- Added deterministic Proof of Change with `/proof`. Scores are based on observed workspace mutations, diff inspection, project-command discovery, successful test/lint/typecheck/build evidence, clean tool execution and completion state rather than model self-confidence.
+- Added isolated Patch Arena with `/arena`. By default it works with the currently active provider only, so a CodeCraft API key is sufficient. `/arena all` optionally includes any additional providers that are already authenticated.
+- Arena candidates run in isolated Git worktrees and are ranked deterministically by valid patch, proof score and smaller patch size; applying a candidate remains an explicit permission-gated action.
+- Sessions now persist the latest proof report and Flight run ID, and can fork exact message prefixes for replay.
+- Fixed mutation accounting so denied writes do not count as successful changes or trigger false verification evidence.
+- Added regression coverage for proof scoring, Flight Recorder redaction/private storage, replay forks and CodeCraft-only Arena behavior.
+
 ## 0.11.3
 
 Released: 2026-10-05.
