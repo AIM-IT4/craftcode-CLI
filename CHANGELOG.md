@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.5
+
+Released: 2026-10-06.
+
+- Replaced the static Thinking/Analyzing word carousel with semantic activity labels derived from the actual task and execution state.
+- Initial activity now reflects task intent, such as Tracing the issue, Assessing the interface, Mapping dependencies, Planning verification, Checking release state, or Scoping the search.
+- Between tools, activity now reflects evidence and state: Connecting search findings, Connecting code findings, Checking the edit, Verifying the change, Checking in browser, Reviewing evidence, or Reassessing after failures.
+- Tool completion labels are also dynamic, such as Edit applied, Diff ready, Command failed, or Browser evidence captured.
+- Completed turns preserve the final meaningful activity label instead of collapsing back to generic Thought.
+- Added regression coverage for task classification, state-aware labels, tool-result labels, and completed-turn label preservation.
+
 ## 0.14.4
 
 Released: 2026-10-06.
