@@ -109,7 +109,7 @@ async function vercelBrowserLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.20');return;}
+  if(version){console.log('Craft Code 0.14.21');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -122,7 +122,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.20');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.21');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -153,7 +153,7 @@ async function main(){
   const tools=new ToolRegistry({cwd,config,skills,plugins,mcp,agents,checkpoints,yes,onNotice:()=>{},onTodo:x=>tui?.setTodos(x),askFn,getModelClient:()=>({client,model})});
   const events={
     onTurnStart:x=>{tui?.setBusy(true);tui?.setActivity(activityForThinking({...x,step:0}));},
-    onThinking:x=>tui?.setActivity(activityForThinking(x)),
+    onThinking:x=>{tui?.setPhase('waiting');tui?.setActivity(activityForThinking(x));},
     onText:t=>tui?.stream(t),
     onUsage:u=>tui?.setMeta({requestUsage:u}),
     onContext:(n,stats)=>tui?.setMeta({contextChars:n,contextWindowTokens:stats?.contextWindow||0}),
@@ -319,7 +319,7 @@ async function main(){
           }catch(e){tui.setNotice('Vercel not connected',2200);tui.openInfo('Vercel connection failed',`${e.message||String(e)}\n\nRetry /connect vercel. The approval flow now stays inside Craft Code; Esc cancels it, and the browser URL appears in the auth panel as soon as Vercel emits it.`);}
           return;
         }
-        tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name,{onAuthUrl:u=>tui.add('notice',`Opening your browser to authorize ${name}. If it did not open, paste this URL into a browser:\n${u}`)});tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
+        tui.setNotice(`Connecting ${name}…`,0);try{await mcp.authenticate(name,{onAuthUrl:u=>{const copied=tui.copyToClipboard(u);tui.add('notice',`Opening your browser to authorize ${name}. ${copied?'The authorization URL was also copied to your clipboard.':'If it did not open, paste this URL into a browser:'}\n${u}`);}});tui.setNotice(`${name} connected`,2200);}catch(e){tui.setNotice(`${name} not connected`,2200);tui.add('notice',e.message||String(e));}return;
       }
       if(cmd==='/disconnect'){if(!rest[0])return tui.add('notice','Use /disconnect <connector>.');if(rest[0].toLowerCase()==='vercel')return tui.add('assistant','To revoke Vercel browser/device authorization, run `npx -y vercel@latest logout`. Craft Code does not store your Vercel password or OAuth authorization code.');await mcp.logout(rest[0]);tui.setNotice(`${rest[0]} disconnected`);return;}
       if(cmd==='/agents'){const xs=agents.list();tui.openInfo('Agents',xs.length?xs.map(a=>`${a.status==='running'?'●':a.status==='done'?'✓':'○'} ${a.id} · ${a.role} · ${fmtTokens(a.used||0)}/${fmtTokens(a.budget)} · ${a.task}`).join('\n'):'No subagents launched yet.');return;}
@@ -399,6 +399,9 @@ async function main(){
         const key=(rest[0]||'').toLowerCase();if(key==='autoresume'||key==='auto-resume'){const v=(rest[1]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice','Use /settings autoresume on|off.');config.sessions=config.sessions||{};config.sessions.autoResume=v==='on';const f=await updateProjectConfig(cwd,{sessions:{autoResume:v==='on'}});return tui.setNotice(`Auto-resume ${v} · ${f}`,2200);}return tui.add('assistant',`Workspace settings\n\n- Auto-resume: **${config.sessions?.autoResume?'on':'off'}**\n- Autosave: **${config.sessions?.autosave!==false?'on':'off'}**\n- Spark plushie: **${config.ui?.plushie||'auto'}**\n- Project config: \`${path.join(cwd,'.craftcli','config.json')}\``);
       }
       if(cmd==='/style'){const v=(rest[0]||'').toLowerCase();if(!v)return tui.add('assistant',`Visual style: **${config.ui?.style||'claude'}**\n\nUse /style claude, /style classic, or /style minimal. Craft Code can change glyphs, ANSI emphasis, spacing, and colors; the actual font family is controlled by your terminal application.`);if(!['claude','classic','minimal'].includes(v))return tui.add('notice','Use /style claude|classic|minimal.');config.ui={...(config.ui||{}),style:v};await updateProjectConfig(cwd,{ui:{style:v}});tui.setMeta({uiStyle:v});return tui.setNotice(`Visual style · ${v}`,1800);}
+      if(cmd==='/summary'){const v=(rest[0]||'').toLowerCase();if(!['on','off'].includes(v))return tui.add('notice',`Turn summary is ${config.ui?.turnSummary===false?'off':'on'}. Use /summary on|off.`);config.ui={...(config.ui||{}),turnSummary:v==='on'};await updateProjectConfig(cwd,{ui:{turnSummary:v==='on'}});tui.setMeta({turnSummary:v==='on'});return tui.setNotice(`Turn summary · ${v}`,1800);}
+      if(cmd==='/notify'){const v=(rest[0]||'').toLowerCase();if(!['auto','always','off'].includes(v))return tui.add('notice',`Notifications: ${config.ui?.notify||'auto'}. /notify auto (only when the terminal is unfocused) | always | off. Set CRAFTCODE_NOTIFY=0 to force off.`);config.ui={...(config.ui||{}),notify:v};await updateProjectConfig(cwd,{ui:{notify:v}});tui.setMeta({notify:v});return tui.setNotice(`Notifications · ${v}`,1800);}
+      if(cmd==='/tools'){const v=(rest[0]||'').toLowerCase();if(!['group','ungroup'].includes(v))return tui.add('notice',`Tool calls are ${config.ui?.groupTools===false?'shown individually':'grouped when repeated'}. Use /tools group|ungroup.`);const on=v==='group';config.ui={...(config.ui||{}),groupTools:on};await updateProjectConfig(cwd,{ui:{groupTools:on}});tui.setMeta({groupTools:on});return tui.setNotice(`Tool calls · ${on?'grouped':'individual'}`,1800);}
       if(cmd==='/plushie'){const v=(rest[0]||'').toLowerCase();if(!v)return tui.openInfo('CraftCode Spark',`Plushie: ${config.ui?.plushie||'auto'}\n\n/plushie auto  show when terminal has enough room\n/plushie on    always show when physically possible\n/plushie off   hide Spark\n\nSpark is an original CraftCode mascot. It animates while the agent works and changes expression on success/error.`);if(!['auto','on','off'].includes(v))return tui.add('notice','Use /plushie auto|on|off.');config.ui={...(config.ui||{}),plushie:v};await updateProjectConfig(cwd,{ui:{plushie:v}});tui.setMeta({plushie:v});return tui.setNotice(`Spark plushie · ${v}`,1800);}
 
       if(cmd==='/config')return tui.add('assistant',GLOBAL_CONFIG);
@@ -419,7 +422,7 @@ async function main(){
   };
 
   tui=new TerminalTui({
-    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,uiStyle:config.ui?.style||'claude',plushie:config.ui?.plushie||'auto',
+    cwd,provider:providerId,model,mode,effort,permissionPreset,usage,planTokens:planResolved.tokens,planSource:planResolved.source,resetDay:config.resetDay,contextWindowTokens:session.contextWindow?.()||0,uiStyle:config.ui?.style||'claude',plushie:config.ui?.plushie||'auto',notify:config.ui?.notify||'auto',turnSummary:config.ui?.turnSummary!==false,groupTools:config.ui?.groupTools!==false,reducedMotion:!!config.ui?.reducedMotion,
     onSubmit:runOne,onCommand:command,onCancel:()=>session.cancel(),onExit:exit,fileRefs:refs,showSplash,
     onModelsRequest:()=>client.models(),onModelPick:setModel,onModePick:setMode,onEffortPick:setEffort,onPermissionPick:setPermissions,onPermissionCycle:cyclePermissions,onPermissionDecision:persistApproval,onQuickAction:quickAction,
     startupMeta:{skills:skills.list().length,plugins:plugins.list().length,mcp:mcp.list().length,planName:client.planHint()?.name||'',rpm:client.rateLimits.rpmLimit||0}

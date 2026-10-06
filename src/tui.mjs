@@ -1,10 +1,11 @@
 import path from 'node:path';
 import {fmtTokens} from './ui.mjs';
 import {sparkFrame,sparkKey,sparkMood,SPARK_HEIGHT} from './plushie.mjs';
+import {phaseLabel,shouldNotify,titleFor,turnSummary,groupToolRuns,cropMiddle,osc52} from './uiux.mjs';
 
 const CSI='\x1b[';
 const C={
-  reset:`${CSI}0m`,bold:`${CSI}1m`,dim:`${CSI}2m`,italic:`${CSI}3m`,underline:`${CSI}4m`,
+  reset:`${CSI}0m`,bold:`${CSI}1m`,dim:`${CSI}38;5;246m`,italic:`${CSI}3m`,underline:`${CSI}4m`,
   black:`${CSI}30m`,white:`${CSI}97m`,slate:`${CSI}38;5;245m`,slate2:`${CSI}38;5;239m`,
   orange:`${CSI}38;5;209m`,orange2:`${CSI}38;5;173m`,green:`${CSI}38;5;42m`,yellow:`${CSI}38;5;220m`,
   red:`${CSI}38;5;203m`,blue:`${CSI}38;5;75m`,cyan:`${CSI}38;5;80m`,violet:`${CSI}38;5;141m`,
@@ -63,6 +64,9 @@ const COMMANDS=[
   {cmd:'/model',desc:'Choose model from active provider'},
   {cmd:'/models',desc:'Browse models from active provider'},
   {cmd:'/effort',desc:'Set agent depth: Low / Normal / High'},
+  {cmd:'/summary',desc:'One-line stats after each turn: on / off'},
+  {cmd:'/notify',desc:'Bell + tab title when a long turn finishes: auto / always / off'},
+  {cmd:'/tools',desc:'Group repeated tool calls: group / ungroup'},
   {cmd:'/usage',desc:'Open token usage dashboard'},
   {cmd:'/usage detail',desc:'Session tokens: input / output / cached, cache hits, response times'},
   {cmd:'/permissions',desc:'Command/file permissions: Ask / Edit / Auto / Read-only'},
@@ -164,7 +168,7 @@ const fmtPlan=n=>n===Infinity?'Unlimited':fmtTokens(n);
 export class TerminalTui{
   constructor(o){
     Object.assign(this,o);
-    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';this.plushie=['auto','on','off'].includes(o.plushie)?o.plushie:'auto';this.plushieMood='idle';this.plushieMoodUntil=0;this.plushieSince=Date.now();this._plushieKey='';
+    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';this.plushie=['auto','on','off'].includes(o.plushie)?o.plushie:'auto';this.plushieMood='idle';this.plushieMoodUntil=0;this.plushieSince=Date.now();this._plushieKey='';this.phase={kind:'waiting',since:Date.now()};this.focused=true;this.focusKnown=false;this.notify=['auto','always','off'].includes(o.notify)?o.notify:'auto';if(process.env.CRAFTCODE_NOTIFY==='0')this.notify='off';this.turnSummaryOn=o.turnSummary!==false;this.groupTools=o.groupTools!==false;this.reducedMotion=!!o.reducedMotion||process.env.CRAFTCODE_REDUCED_MOTION==='1';this.turnTools=0;this.turnUsageBefore=null;this._title='';this.titleState='idle';
     this.transcript=[];this.input='';this.cursor=0;this.history=[];this.hist=-1;
     this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;this.contextWindowTokens=Number(o.contextWindowTokens)||0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
@@ -176,17 +180,17 @@ export class TerminalTui{
   start(){
     if(!process.stdin.isTTY||!process.stdout.isTTY)throw new Error('Craft Code requires an interactive terminal.');
     this.running=true;
-    process.stdout.write(`${CSI}?1049h${this.mouseCapture?`${CSI}?1007l${CSI}?1000h${CSI}?1006h`:`${CSI}?1007h`}${CSI}?25l${CSI}?2004h${CSI}2J${CSI}H`);
+    process.stdout.write(`${CSI}?1049h${this.mouseCapture?`${CSI}?1007l${CSI}?1000h${CSI}?1006h`:`${CSI}?1007h`}${CSI}?25l${CSI}?2004h${CSI}?1004h${CSI}2J${CSI}H`);
     process.stdin.setEncoding('utf8');process.stdin.setRawMode(true);process.stdin.resume();
     process.stdin.on('data',this._data);process.stdout.on('resize',this._resize);
-    this._tick=setInterval(()=>{let dirty=false;if(this.busy){this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;dirty=true;}if(this.plushieAnimating()){const k=sparkKey(this.currentSparkMood());if(k!==this._plushieKey){this._plushieKey=k;dirty=true;}}if(dirty)this.schedule();},120);
+    this._tick=setInterval(()=>{let dirty=false;if(this.busy){if(this.reducedMotion){const t=Date.now();if(t-(this._reducedTick||0)>=1000){this._reducedTick=t;dirty=true;}}else{this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;dirty=true;}}if(!this.reducedMotion&&this.plushieAnimating()){const k=sparkKey(this.currentSparkMood());if(k!==this._plushieKey){this._plushieKey=k;dirty=true;}}if(dirty)this.schedule();},120);
     this.render();
   }
   stop(){
     if(!this.running)return;this.running=false;clearInterval(this._tick);
     process.stdin.off('data',this._data);process.stdout.off('resize',this._resize);
     try{process.stdin.setRawMode(false);}catch{}
-    process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?1007l${CSI}?2004l${CSI}?25h${CSI}?1049l`);
+    process.stdout.write(`${CSI}?1006l${CSI}?1000l${CSI}?1007l${CSI}?2004l${CSI}?1004l${CSI}?25h${CSI}?1049l\x1b]0;\x07`);
   }
   schedule(){if(this.renderQueued)return;this.renderQueued=true;setTimeout(()=>{this.renderQueued=false;this.render();},16);}
   setMouseCapture(on){
@@ -198,11 +202,22 @@ export class TerminalTui{
   }
   enterSelectionMode(){this.selectionRestoreMouse=this.mouseCapture;this.selectionMode=true;this.setMouseCapture(false);this.setNotice('Selection mode · Esc returns to Craft Code',1800);}
   exitSelectionMode(){if(!this.selectionMode)return;this.selectionMode=false;if(this.selectionRestoreMouse)this.setMouseCapture(true);this.selectionRestoreMouse=false;this.schedule();}
-  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.plushie&&['auto','on','off'].includes(x.plushie))this.plushie=x.plushie;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
+  setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.plushie&&['auto','on','off'].includes(x.plushie))this.plushie=x.plushie;if(x.notify&&['auto','always','off'].includes(x.notify))this.notify=process.env.CRAFTCODE_NOTIFY==='0'?'off':x.notify;if(x.turnSummary!==undefined)this.turnSummaryOn=!!x.turnSummary;if(x.groupTools!==undefined)this.groupTools=!!x.groupTools;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
-    if(v&&!this.busy){this.plushieSince=Date.now();this.plushieMood='working';this.plushieMoodUntil=0;this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
-    if(!v&&this.busy){this.finishAssistantStream();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}this.plushieSince=Date.now();if(this.plushieMood!=='error'){this.plushieMood='success';this.plushieMoodUntil=Date.now()+2600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='success'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},2700);}}
+    if(v&&!this.busy){this.setPhase('waiting');this.turnTools=0;this.turnUsageBefore=this.usage?.snapshot?.().detail||null;this.setTitle('working');this.plushieSince=Date.now();this.plushieMood='working';this.plushieMoodUntil=0;this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
+    if(!v&&this.busy){this.finishAssistantStream();this.finishTurn();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}this.plushieSince=Date.now();if(this.plushieMood!=='error'){this.plushieMood='success';this.plushieMoodUntil=Date.now()+2600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='success'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},2700);}}
     this.busy=v;this.schedule();
+  }
+  setPhase(kind,tool=''){this.phase={kind,tool,since:Date.now()};}
+  onFocus(v){this.focused=!!v;this.focusKnown=true;if(v&&this.titleState==='done')this.setTitle('idle');}
+  setTitle(state){this.titleState=state;if(!this.running)return;const t=titleFor({workspace:path.basename(this.cwd||''),state});if(t===this._title)return;this._title=t;try{process.stdout.write(`\x1b]0;${t}\x07`);}catch{}}
+  copyToClipboard(text){if(!this.running)return false;try{process.stdout.write(osc52(text));return true;}catch{return false;}}
+  finishTurn(){
+    const secs=this.turnStartedAt?(Date.now()-this.turnStartedAt)/1000:0;
+    if(this.turnSummaryOn){const after=this.usage?.snapshot?.().detail;if(after&&this.turnUsageBefore){const line=turnSummary({before:this.turnUsageBefore,after,seconds:secs,tools:this.turnTools});if(line)this.add('summary',line);}}
+    const ring=shouldNotify({mode:this.notify,focused:this.focused,focusKnown:this.focusKnown,seconds:secs});
+    this.setTitle(ring||(this.focusKnown&&!this.focused)?'done':'idle');
+    if(ring&&this.running){try{process.stdout.write('\x07');}catch{}}
   }
   setActivity(s){const t=[...this.transcript].reverse().find(m=>m.role==='thinking'&&m.status==='running');if(t&&s&&!/^(read_|write_|replace_|run_|git_|list_|search_|call_|update_)/.test(String(s)))t.detail=String(s).replace(/…$/,'');this.schedule();}
   setNotice(s,ms=3000){this.notice=s;this.schedule();if(ms)setTimeout(()=>{if(this.notice===s){this.notice='';this.schedule();}},ms);}
@@ -213,11 +228,11 @@ export class TerminalTui{
   add(role,text,meta={}){const value=String(text??'');if(role==='notice'){const key=value.trim().toLowerCase(),now=Date.now();if(key&&key===this.lastNoticeKey&&now-this.lastNoticeAt<5000)return;this.lastNoticeKey=key;this.lastNoticeAt=now;}this.transcript.push({role,text:value,...meta});if(this.transcript.length>450)this.transcript=this.transcript.slice(-450);this.scrollOffset=0;this.schedule();}
   beginAssistant(){this.finishAssistantStream();}
   finishAssistantStream(){const x=[...this.transcript].reverse().find(m=>m.role==='assistant'&&m.status==='streaming');if(x)x.status='done';}
-  stream(t){let x=this.transcript.at(-1);if(!x||x.role!=='assistant'||x.status!=='streaming'){this.finishAssistantStream();x={role:'assistant',text:'',status:'streaming'};this.transcript.push(x);}x.text+=t;this.schedule();}
+  stream(t){if(this.phase?.kind!=='streaming')this.setPhase('streaming');let x=this.transcript.at(-1);if(!x||x.role!=='assistant'||x.status!=='streaming'){this.finishAssistantStream();x={role:'assistant',text:'',status:'streaming'};this.transcript.push(x);}x.text+=t;this.schedule();}
   replaceTranscript(x=[]){this.transcript=x.map(m=>({...m,text:String(m.text??'')}));this.schedule();}
   getTranscript(){return this.transcript.filter(m=>m.role!=='thinking');}
-  toolStart({name,detail,args}){this.finishAssistantStream();const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
-  toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}if(error){this.plushieSince=Date.now();this.plushieMood='error';this.plushieMoodUntil=Date.now()+3600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='error'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},3700);}this.schedule();}
+  toolStart({name,detail,args}){this.turnTools++;this.setPhase('tool',name);this.finishAssistantStream();const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
+  toolEnd({cardId,result,durationMs,error}){this.setPhase('waiting');const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}if(error){this.plushieSince=Date.now();this.plushieMood='error';this.plushieMoodUntil=Date.now()+3600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='error'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},3700);}this.schedule();}
   askApproval(kind,detail,{persistent=true,reason='permission'}={}){return new Promise(resolve=>{this.approval={kind,detail:String(detail),persistent:!!persistent,reason,resolve};this.schedule();});}
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
   askPlanApproval(){return new Promise(resolve=>{this.planApproval={resolve};this.schedule();});}
@@ -307,6 +322,8 @@ export class TerminalTui{
   }
   handleData(data){
     while(data.length){
+      if(data.startsWith('\x1b[I')){this.onFocus(true);data=data.slice(3);continue;}
+      if(data.startsWith('\x1b[O')){this.onFocus(false);data=data.slice(3);continue;}
       const mm=data.match(/^\x1b\[<\d+;\d+;\d+[Mm]/);if(mm){this.handleMouse(mm[0]);data=data.slice(mm[0].length);continue;}
       if(data.startsWith('\r\n')){this.handleKey('\r');data=data.slice(2);continue;}
       if(data.startsWith('\x1b[200~')){const e=data.indexOf('\x1b[201~',6);if(e>=0){const p=data.slice(6,e).replace(/\r\n?/g,'\n');this.input=this.input.slice(0,this.cursor)+p+this.input.slice(this.cursor);this.cursor+=p.length;this.fileSuggestionIndex=0;this.commandSelection=0;this.suggestionsDismissed=false;this.schedule();data=data.slice(e+6);continue;}}
@@ -380,16 +397,18 @@ export class TerminalTui{
     if(s>=' '&&!s.startsWith('\x1b')){this.input=this.input.slice(0,this.cursor)+s+this.input.slice(this.cursor);this.cursor+=s.length;this.fileSuggestionIndex=0;this.commandSelection=0;this.suggestionsDismissed=false;this.schedule();}
   }
   transcriptLines(w){
-    const out=[];
+    const out=[],runAt=new Map((this.groupTools?groupToolRuns(this.transcript):[]).map(r=>[r.start,r]));
     for(let i=0;i<this.transcript.length;i++){
-      const m=this.transcript[i];
+      const m=this.transcript[i],run=runAt.get(i);
+      if(run&&!(this.toolSelection!=null&&this.toolSelection>=run.start&&this.toolSelection<=run.end)){out.push(`  ${paint('dim','│')} ${paint('green','✓')} ${paint('slate',crop(`${glyph(run.name)} ${run.name} ×${run.count}`,w-24))} ${paint('dim',`${Math.max(.1,run.durationMs/1000).toFixed(1)}s · /tools ungroup to expand`)}`);i=run.end;continue;}
       if(m.role==='user'){
         out.push('');wrap(m.text,w-6).forEach((x,j)=>out.push(`${j?'  ':paint('orange','❯ ')}${paint(j?'white':'bold',x)}`));continue;
       }
-      if(m.role==='notice'){out.push(`  ${paint('yellow','!')} ${paint('slate',crop(m.text,w-5))}`);continue;}
+      if(m.role==='notice'){const nl=wrap(m.text,Math.max(20,w-5)),shown=nl.slice(0,10);shown.forEach((x,j)=>out.push(`  ${j?' ':paint('yellow','!')} ${paint('slate',x)}`));if(nl.length>shown.length)out.push(`    ${paint('dim',`… ${nl.length-shown.length} more lines`)}`);continue;}
+      if(m.role==='summary'){out.push(`  ${paint('dim','└ '+crop(m.text,w-6))}`);continue;}
       if(m.role==='thinking'){
         const mark=(UI_STYLES[this.uiStyle]||UI_STYLES.claude).thinking;
-        if(m.status==='running'){out.push(`  ${paint('orange',spinner[this.spinnerIndex])} ${C.italic}${C.slate}${m.detail||'Thinking'}…${C.reset}`);continue;}
+        if(m.status==='running'){const head=`${m.detail||'Thinking'}…`,pl=this.busy?phaseLabel(this.phase):'';out.push(`  ${paint('orange',spinner[this.spinnerIndex])} ${C.italic}${C.slate}${head}${C.reset}${pl?' '+paint('dim','· '+crop(pl,Math.max(12,w-10-width(head)))):''}`);continue;}
         const dur=m.durationMs?`${Math.max(.1,m.durationMs/1000).toFixed(1)}s`:'';
         out.push(`  ${paint('slate',mark)} ${paint('slate',m.detail||'Thought')}${dur?` ${paint('dim',`for ${dur}`)}`:''}`);continue;
       }
@@ -469,8 +488,8 @@ export class TerminalTui{
       if(i<items.length-1){const d=divider();line+=d;x+=width(d);}
     }
     const right=[
-      {text:chip(crop(`${this.provider}/${this.model}`,22),{tone:'orange',icon:'◐'}),action:'model'},
-      {text:chip(this.effort[0].toUpperCase()+this.effort.slice(1),{tone:'violet'}),action:'effort'}
+      {text:chip(cropMiddle(`${this.provider}/${this.model}`,28,width),{tone:'orange',icon:'◐'}),action:'model'},
+      {text:chip(`effort: ${this.effort[0].toUpperCase()+this.effort.slice(1)}`,{tone:'violet'}),action:'effort'}
     ];
     if(this.lastCheckpoint)right.push({text:chip('Undo',{tone:'yellow',icon:'↶'}),action:'undo'});
     const rightText=right.map(x=>x.text).join(divider()),space=Math.max(2,w-width(line)-width(rightText)-2);
@@ -490,8 +509,9 @@ export class TerminalTui{
     const parts=[
       chip(plan,{tone:pct>=90?'red':pct>=70?'yellow':'green',icon:'◔'}),
       chip(`Today ${fmtTokens(today)}`,{tone:'blue',icon:'◷'}),
-      chip(ctxLabel,{tone:ctxPct>=88?'red':ctxPct>=70?'yellow':'violet',icon:'◇'})
+      chip(ctxLabel,{tone:ctxPct>=88?'red':ctxPct>=70?'yellow':ctxPct>=50?'violet':'green',icon:'◇'})
     ];
+    const dd=u.detail;if(dd&&dd.prompt&&(dd.cached||dd.written))parts.push(chip(`Cache ${Math.round(100*(dd.cached||0)/dd.prompt)}%`,{tone:'cyan',icon:'↻'}));
     const joined=parts.join(divider()),hint=this.mouseCapture?paint('dim','mouse wheel scroll · /mouse off for native copy'):paint('dim','wheel/↑↓ scroll · Ctrl+P/N history · drag to copy');
     const line='  '+joined,space=Math.max(2,w-width(line)-width(hint)-2);
     if(this.mouseCapture)this.regions.push({x1:3,x2:3+width(joined),y,action:'usage'});
@@ -503,7 +523,7 @@ export class TerminalTui{
   plushieLines(w,rows,{blocked=false,availableRows=Infinity,now=Date.now()}={}){
     if(this.plushie==='off'||blocked||availableRows<SPARK_HEIGHT)return[];
     if(!this.plushieVisible(w,rows))return[];
-    const f=sparkFrame({mood:this.currentSparkMood(now),now});
+    const f=sparkFrame({mood:this.currentSparkMood(now),now:this.reducedMotion?0:now});
     const tag='  '+f.label,raw=[paint(f.fx.tone,f.fx.text),...f.rows.map(r=>paint(f.tone,r))].map(x=>x+' '.repeat(tag.length));
     raw[raw.length-1]=raw[raw.length-1].slice(0,raw[raw.length-1].length-tag.length)+paint('dim',tag);
     return raw.map(line=>' '.repeat(Math.max(0,w-width(line)))+line);

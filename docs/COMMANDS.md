@@ -31,6 +31,9 @@ CLI authentication:
 - `/permissions` — permission preset picker. `A`/`D` on normal permission prompts persist that category for the workspace; policy-gated shell commands remain one-shot approvals.
 - `/style claude|classic|minimal` — switch terminal glyph/emphasis profile (font family is controlled by the terminal emulator)
 - `/plushie auto|on|off` — control the animated Spark terminal mascot above the composer (idle blink, sleep, typing, cheer and error reactions)
+- `/summary on|off` — toggle the one-line token/time summary after each turn
+- `/notify auto|always|off` — bell and tab-title alert when a long turn finishes (`CRAFTCODE_NOTIFY=0` disables)
+- `/tools group|ungroup` — collapse repeated tool calls into one row
 - `/usage` — open the token usage dashboard; `/usage detail` prints this session's input/output/cached tokens, cache-hit rate and average first-token/response times
 - `/agents`
 - `/agent spawn <role> <task>`
@@ -86,3 +89,12 @@ CLI authentication:
 - `!git status` — shell shortcut through command policy + normal permissions
 
 Long-running commands are handled through agent process tools (`process_start`, `process_logs`, `process_status`, `process_stop`) so dev servers do not consume foreground command timeouts.
+
+## Environment
+
+- `CRAFTCODE_REDUCED_MOTION=1` — disable animations (Spark, spinners).
+- `CRAFTCODE_NOTIFY=0` — never ring the bell.
+
+## Supabase from local `.env`
+
+The agent's `supabase_query` tool (read-only) uses `SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (or an anon key) from `.env`/`.env.local`. Service-role reads bypass RLS and ask first; keys are never shown to the model.

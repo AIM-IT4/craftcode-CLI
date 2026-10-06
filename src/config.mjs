@@ -117,7 +117,11 @@ const defaults = {
   },
   ui: {
     style: 'claude',
-    plushie: 'auto'
+    plushie: 'auto',
+    notify: 'auto',
+    turnSummary: true,
+    groupTools: true,
+    reducedMotion: false
   },
   instructions: {
     files: ['AGENTS.md','CLAUDE.md','.github/copilot-instructions.md'],

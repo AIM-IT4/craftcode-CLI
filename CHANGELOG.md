@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.21
+
+Released: 2026-10-06.
+
+- **Local Supabase access.** New read-only `supabase_query` tool reads `SUPABASE_URL` and the service-role (or anon/publishable) key from your local `.env`, `.env.local` or a workspace `env_file`, so the agent can list and read RLS-locked tables. Keys are never shown to the model and are scrubbed from output; the service-role key (which bypasses RLS) asks for approval first; only GET requests go to `*.supabase.co` or localhost; filters and identifiers are validated and results capped at 200 rows. `read_file` and `read_many_files` now mask secret values in `.env*` files.
+- **Turn-finished alerts.** A bell and a tab-title status (`⏳` working, `✓` done) fire when a long turn finishes while the terminal is unfocused (focus reporting) or after 30s when focus is unknown. `/notify auto|always|off`, or `CRAFTCODE_NOTIFY=0`.
+- **Honest wait status.** The thinking line says whether it is waiting for the model, running a tool, or writing, with an Esc hint after 3s and a slow-provider hint after 5s.
+- **Turn summary.** A dim line after each turn shows requests, input/output tokens, cache share, tools and time. `/summary on|off`.
+- **Layout and readability.** Long notices wrap; footer shows middle-truncated model names, `effort: X`, a colored context meter and a cache-hit chip; dim text is brighter; repeated tool calls collapse into one row (`/tools group|ungroup`); `CRAFTCODE_REDUCED_MOTION=1` stops animation; OAuth URLs are also copied via OSC 52.
+
 ## 0.14.20
 
 Released: 2026-10-06.
