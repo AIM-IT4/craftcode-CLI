@@ -7,6 +7,9 @@ Terminal TUI
     │
     ▼
 AgentSession ─── ToolRegistry ─── filesystem / shell / Git
+    │
+    ├── ProofTracker (observed verification evidence)
+    └── FlightRecorder (local step metadata + replay boundaries)
     │                  │
     │                  ├── Skills (lazy SKILL.md)
     │                  ├── Plugins (local + Claude-style)
@@ -30,6 +33,8 @@ ProviderRegistry
 3. **Recoverability** — sessions persist and build-mode changes create checkpoints for undo.
 4. **Extensibility** — skills, plugins and MCP stay outside the core inference client.
 5. **General-purpose use** — no project-specific behavior is hard-coded into the agent.
+6. **Auditable execution** — proof scores come from observed tool evidence, while Flight logs preserve decision boundaries without duplicating full tool output.
+7. **Single-provider first** — advanced orchestration and Patch Arena work with CodeCraft alone; extra providers are optional accelerators, never prerequisites.
 
 
 ## Provider boundary
@@ -37,3 +42,12 @@ ProviderRegistry
 `AgentSession` depends on a normalized provider client contract: model discovery, streaming assistant/tool-call messages, optional capability metadata, and optional rate metadata. Provider-specific authentication, headers, plan hints, and API quirks stay under `src/providers/`.
 
 Credentials are provider-scoped in `~/.craftcli/auth.json`; legacy `codecraftApiKey` credentials remain readable. OpenRouter uses its OpenAI-compatible `/api/v1` interface, while custom providers can supply any compatible base URL.
+
+
+## Trust and replay
+
+`AgentSession` emits structured trace events for turn boundaries, model requests/responses, tool calls, repair/compaction events and completion state. `FlightRecorder` persists a bounded local JSONL timeline under the user-level Craft Code directory with private file permissions where supported. Tool outputs are represented by hashes and sizes rather than copied verbatim.
+
+Saved sessions remain the source of truth for conversation content. Replay forks a saved message prefix at a recorded boundary. Context compaction increments an epoch; replay refuses boundaries from an older epoch when a later compaction means the exact prior context is no longer reconstructable.
+
+`ProofTracker` observes successful mutations and verification activity during the same turn. It does not ask the model to rate itself. Patch Arena reuses isolated writer worktrees and the same proof reports for deterministic candidate ranking. The default Arena candidate set contains only the active provider, so CodeCraft-only installations receive the full feature set.
