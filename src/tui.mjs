@@ -283,10 +283,10 @@ export class TerminalTui{
       if(this.modal.type==='usage'){if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();return;}
       if(this.modal.type==='info'){
         if(s==='\x1b'||s==='\r'||s==='q'||s==='Q')return this.closeModal();
-        if(s==='\x1b[A'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+1);return this.schedule();}
-        if(s==='\x1b[B'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-1);return this.schedule();}
-        if(s==='\x1b[5~'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+8);return this.schedule();}
-        if(s==='\x1b[6~'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-8);return this.schedule();}
+        if(s==='\x1b[A'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-1);return this.schedule();}
+        if(s==='\x1b[B'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+1);return this.schedule();}
+        if(s==='\x1b[5~'){this.modal.scroll=Math.max(0,(this.modal.scroll||0)-8);return this.schedule();}
+        if(s==='\x1b[6~'){this.modal.scroll=Math.min(10000,(this.modal.scroll||0)+8);return this.schedule();}
         return;
       }
       const a=this.modalItems();if(s==='\x1b')return this.closeModal();if(s==='\r')return this.closeModal(a[this.modal.index]?.id||null);
@@ -369,7 +369,7 @@ export class TerminalTui{
       ];
     }
     if(this.modal?.type==='info'){
-      const title=this.modal.title||'Info',content=markdownLines(this.modal.text,Math.max(20,w-4)),page=Math.min(14,Math.max(6,Math.floor((process.stdout.rows||34)/3))),maxScroll=Math.max(0,content.length-page),scroll=Math.max(0,Math.min(maxScroll,this.modal.scroll||0)),end=Math.max(0,content.length-scroll),start=Math.max(0,end-page),shown=content.slice(start,end),o=[paint('orange',`╭─ ${crop(title,Math.max(8,w-12))} ${'─'.repeat(Math.max(1,w-Math.min(w-12,width(title))-5))}╮`)];
+      const title=this.modal.title||'Info',content=markdownLines(this.modal.text,Math.max(20,w-4)),page=Math.min(14,Math.max(6,Math.floor((process.stdout.rows||34)/3))),maxScroll=Math.max(0,content.length-page),start=Math.max(0,Math.min(maxScroll,this.modal.scroll||0)),end=Math.min(content.length,start+page),shown=content.slice(start,end),o=[paint('orange',`╭─ ${crop(title,Math.max(8,w-12))} ${'─'.repeat(Math.max(1,w-Math.min(w-12,width(title))-5))}╮`)];
       for(const line of shown)o.push(` ${crop(line,w-3)}`);
       if(!shown.length)o.push(` ${paint('dim','(empty)')}`);
       o.push(` ${paint('dim',`${content.length?start+1:0}–${end} of ${content.length} · ↑/↓ row · PgUp/PgDn page · Enter/Esc/Q close`)}`);
