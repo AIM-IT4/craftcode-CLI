@@ -61,7 +61,7 @@ test('evidence-pinned compaction keeps requirements changes and failed checks',(
     {role:'user',content:'finish'},
     {role:'assistant',content:'done'}
   ];
-  const r=compactConversation(messages,{targetChars:900,aggressive:true}),text=JSON.stringify(r.messages);
+  const r=compactConversation(messages,{targetChars:300,aggressive:true}),text=JSON.stringify(r.messages);
   assert.match(text,/Keep backward compatibility|guest users/);
   assert.match(text,/src\/checkout\.ts/);
   assert.match(text,/Verification failed: npm test/);
