@@ -223,7 +223,7 @@ For JavaScript and TypeScript work, Craft Code can inspect AST-backed symbols, d
 
 ### Shell policy, process handles and cache
 
-Shell commands pass through a policy layer before the ordinary permission preset. Catastrophic host commands are denied, external-impact operations such as publish/deploy/push remain approval-gated, and an opt-in Docker mode can execute shell commands with networking disabled. Safe tool results can be persisted with metadata-based freshness checks; workspace mutations invalidate the local cache.
+`A` / `D` decisions on normal write, shell, and MCP permission prompts are persisted in the workspace `.craftcli/config.json`, so “always” survives later turns and restarts. Policy-gated commands such as project-code execution, destructive operations, pushes, publishes, and deploys intentionally remain one-shot approvals and do not offer a permanent bypass.\n\nShell commands pass through a policy layer before the ordinary permission preset. Catastrophic host commands are denied, external-impact operations such as publish/deploy/push remain approval-gated, and an opt-in Docker mode can execute shell commands with networking disabled. Safe tool results can be persisted with metadata-based freshness checks; workspace mutations invalidate the local cache.
 
 Use long-running process handles for dev servers, watchers and similar tasks. Craft Code owns those processes, keeps bounded logs, and stops them when the CLI exits.
 
