@@ -1,5 +1,6 @@
 import path from 'node:path';
 import {fmtTokens} from './ui.mjs';
+import {sparkFrame,sparkKey,sparkMood,SPARK_HEIGHT} from './plushie.mjs';
 
 const CSI='\x1b[';
 const C={
@@ -162,14 +163,14 @@ const fmtPlan=n=>n===Infinity?'Unlimited':fmtTokens(n);
 export class TerminalTui{
   constructor(o){
     Object.assign(this,o);
-    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';this.plushie=['auto','on','off'].includes(o.plushie)?o.plushie:'auto';this.plushieMood='idle';this.plushieMoodUntil=0;
+    this.provider=o.provider||'codecraft';this.mode=o.mode||'build';this.effort=o.effort||'high';this.permissionPreset=o.permissionPreset||'ask';this.planSource=o.planSource||'auto';this.resetDay=o.resetDay||4;this.uiStyle=UI_STYLES[o.uiStyle]?o.uiStyle:'claude';this.plushie=['auto','on','off'].includes(o.plushie)?o.plushie:'auto';this.plushieMood='idle';this.plushieMoodUntil=0;this.plushieSince=Date.now();this._plushieKey='';
     this.transcript=[];this.input='';this.cursor=0;this.history=[];this.hist=-1;
     this.busy=false;this.notice='';this.requestUsage=null;this.contextChars=0;this.contextWindowTokens=Number(o.contextWindowTokens)||0;
     this.approval=null;this.planApproval=null;this.modal=null;this.queue=[];this.todos=[];
     this.fileSuggestionIndex=0;this.commandSelection=0;this.toolSelection=null;this.spinnerIndex=0;
     this.lastCheckpoint='';this.scrollOffset=0;this.running=false;this.renderQueued=false;this.mouseCapture=!!o.mouseCapture;
     this.screen=o.showSplash?'welcome':'chat';this.prevLines=[];this.regions=[];this.turnStartedAt=0;this.activeThinkingId=null;this.extraCommands=[];this.agents=[];this.lastNoticeKey='';this.lastNoticeAt=0;this.selectionMode=false;this.selectionRestoreMouse=false;this.suggestionsDismissed=false;
-    this._data=b=>this.handleData(String(b));this._resize=()=>{this.prevLines=[];this.render();};
+    this._data=b=>{this.plushieSince=Date.now();this.handleData(String(b));};this._resize=()=>{this.prevLines=[];this.render();};
   }
   start(){
     if(!process.stdin.isTTY||!process.stdout.isTTY)throw new Error('Craft Code requires an interactive terminal.');
@@ -177,7 +178,7 @@ export class TerminalTui{
     process.stdout.write(`${CSI}?1049h${this.mouseCapture?`${CSI}?1007l${CSI}?1000h${CSI}?1006h`:`${CSI}?1007h`}${CSI}?25l${CSI}?2004h${CSI}2J${CSI}H`);
     process.stdin.setEncoding('utf8');process.stdin.setRawMode(true);process.stdin.resume();
     process.stdin.on('data',this._data);process.stdout.on('resize',this._resize);
-    this._tick=setInterval(()=>{if(this.busy){this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;this.schedule();}},120);
+    this._tick=setInterval(()=>{let dirty=false;if(this.busy){this.spinnerIndex=(this.spinnerIndex+1)%spinner.length;dirty=true;}if(this.plushieAnimating()){const k=sparkKey(this.currentSparkMood());if(k!==this._plushieKey){this._plushieKey=k;dirty=true;}}if(dirty)this.schedule();},120);
     this.render();
   }
   stop(){
@@ -198,8 +199,8 @@ export class TerminalTui{
   exitSelectionMode(){if(!this.selectionMode)return;this.selectionMode=false;if(this.selectionRestoreMouse)this.setMouseCapture(true);this.selectionRestoreMouse=false;this.schedule();}
   setMeta(x={}){if(x.provider)this.provider=x.provider;if(x.model)this.model=x.model;if(x.mode)this.mode=x.mode;if(x.effort)this.effort=x.effort;if(x.permissionPreset)this.permissionPreset=x.permissionPreset;if(x.uiStyle&&UI_STYLES[x.uiStyle])this.uiStyle=x.uiStyle;if(x.plushie&&['auto','on','off'].includes(x.plushie))this.plushie=x.plushie;if(x.planTokens!==undefined)this.usage.planTokens=x.planTokens;if(x.planSource)this.planSource=x.planSource;if(x.requestUsage!==undefined)this.requestUsage=x.requestUsage;if(x.contextChars!==undefined)this.contextChars=x.contextChars;if(x.contextWindowTokens!==undefined)this.contextWindowTokens=Number(x.contextWindowTokens)||0;this.schedule();}
   setBusy(v){
-    if(v&&!this.busy){this.plushieMood='working';this.plushieMoodUntil=0;this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
-    if(!v&&this.busy){this.finishAssistantStream();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}if(this.plushieMood!=='error'){this.plushieMood='success';this.plushieMoodUntil=Date.now()+2600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='success'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},2700);}}
+    if(v&&!this.busy){this.plushieSince=Date.now();this.plushieMood='working';this.plushieMoodUntil=0;this.turnStartedAt=Date.now();const id=`thinking-${Date.now()}`;this.activeThinkingId=id;this.transcript.push({role:'thinking',id,status:'running',detail:'Thinking',startedAt:this.turnStartedAt});}
+    if(!v&&this.busy){this.finishAssistantStream();const t=this.transcript.findLast?.(m=>m.id===this.activeThinkingId)||[...this.transcript].reverse().find(m=>m.id===this.activeThinkingId);if(t){t.status='done';t.durationMs=Date.now()-(t.startedAt||Date.now());if(!t.detail||t.detail==='Thinking')t.detail='Thought';}this.plushieSince=Date.now();if(this.plushieMood!=='error'){this.plushieMood='success';this.plushieMoodUntil=Date.now()+2600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='success'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},2700);}}
     this.busy=v;this.schedule();
   }
   setActivity(s){const t=[...this.transcript].reverse().find(m=>m.role==='thinking'&&m.status==='running');if(t&&s&&!/^(read_|write_|replace_|run_|git_|list_|search_|call_|update_)/.test(String(s)))t.detail=String(s).replace(/…$/,'');this.schedule();}
@@ -215,7 +216,7 @@ export class TerminalTui{
   replaceTranscript(x=[]){this.transcript=x.map(m=>({...m,text:String(m.text??'')}));this.schedule();}
   getTranscript(){return this.transcript.filter(m=>m.role!=='thinking');}
   toolStart({name,detail,args}){this.finishAssistantStream();const id=`tool-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;this.transcript.push({role:'toolcard',id,name,detail:String(detail||''),args:args||{},status:'running',result:'',durationMs:0,expanded:false});this.schedule();return id;}
-  toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}if(error){this.plushieMood='error';this.plushieMoodUntil=Date.now()+3600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='error'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},3700);}this.schedule();}
+  toolEnd({cardId,result,durationMs,error}){const x=[...this.transcript].reverse().find(m=>m.id===cardId);if(x){x.status=error?'error':'done';x.result=String(result??'').slice(0,18000);x.durationMs=durationMs||0;}if(error){this.plushieSince=Date.now();this.plushieMood='error';this.plushieMoodUntil=Date.now()+3600;setTimeout(()=>{if(!this.busy&&this.plushieMood==='error'&&Date.now()>=this.plushieMoodUntil){this.plushieMood='idle';this.schedule();}},3700);}this.schedule();}
   askApproval(kind,detail,{persistent=true,reason='permission'}={}){return new Promise(resolve=>{this.approval={kind,detail:String(detail),persistent:!!persistent,reason,resolve};this.schedule();});}
   resolveApproval(v){const a=this.approval;if(!a)return;this.approval=null;a.resolve(v);this.schedule();}
   askPlanApproval(){return new Promise(resolve=>{this.planApproval={resolve};this.schedule();});}
@@ -495,22 +496,15 @@ export class TerminalTui{
     if(this.mouseCapture)this.regions.push({x1:3,x2:3+width(joined),y,action:'usage'});
     return fit(line+' '.repeat(space)+hint,w);
   }
-  plushieLines(w,rows,{blocked=false,availableRows=Infinity}={}){
-    if(this.plushie==='off'||blocked||availableRows<4)return[];
-    const visible=this.plushie==='on'?(w>=70&&rows>=27):(w>=92&&rows>=31);
-    if(!visible)return[];
-    const activeMood=this.busy?'working':(Date.now()<this.plushieMoodUntil?this.plushieMood:'idle');
-    const frame=this.spinnerIndex%2;
-    let spark='✦',face='• ᴗ •',tone='orange';
-    if(activeMood==='working'){spark=frame?'✧':'✦';face=frame?'◓ ᴗ ◐':'◐ ᴗ ◓';tone='orange';}
-    else if(activeMood==='success'){spark='✦';face='^ ᴗ ^';tone='green';}
-    else if(activeMood==='error'){spark='!';face='• ︵ •';tone='red';}
-    const raw=[
-      paint(tone,'      '+spark),
-      paint(tone,'   ╭───────╮'),
-      paint(tone,`  ( ${face} )`),
-      paint(tone,'   ╰─╯ ╰─╯')+paint('dim','  Spark')
-    ];
+  currentSparkMood(now=Date.now()){return sparkMood({busy:this.busy,mood:this.plushieMood,moodUntil:this.plushieMoodUntil,idleMs:now-this.plushieSince,now});}
+  plushieVisible(w,rows){return this.plushie==='on'?(w>=70&&rows>=27):(this.plushie==='auto'&&w>=92&&rows>=31);}
+  plushieAnimating(){if(!this.running||this.plushie==='off'||this.screen==='welcome')return false;const cols=Math.max(72,process.stdout.columns||110),rows=Math.max(26,process.stdout.rows||34);return this.plushieVisible(Math.max(68,cols-4),rows);}
+  plushieLines(w,rows,{blocked=false,availableRows=Infinity,now=Date.now()}={}){
+    if(this.plushie==='off'||blocked||availableRows<SPARK_HEIGHT)return[];
+    if(!this.plushieVisible(w,rows))return[];
+    const f=sparkFrame({mood:this.currentSparkMood(now),now});
+    const tag='  '+f.label,raw=[paint(f.fx.tone,f.fx.text),...f.rows.map(r=>paint(f.tone,r))].map(x=>x+' '.repeat(tag.length));
+    raw[raw.length-1]=raw[raw.length-1].slice(0,raw[raw.length-1].length-tag.length)+paint('dim',tag);
     return raw.map(line=>' '.repeat(Math.max(0,w-width(line)))+line);
   }
   renderChat(){

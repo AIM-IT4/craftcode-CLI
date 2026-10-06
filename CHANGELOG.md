@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Spark is now a richer, always-alive mascot: a 5-row sprite (effects row plus 4 body rows) in its own `src/plushie.mjs` module.
+- Idle animation: Spark blinks, glances sideways, shuffles its feet and twinkles its antenna even when the agent is not busy; it dozes off (`z Z Z`) after 45s without activity and wakes on any key press or new turn.
+- Working: Spark types with alternating arms and an orbiting spark with a trail. Success: arms-up cheer with a bouncing confetti row. Error: a short head-shake with an exclamation mark.
+- Frames are a pure function of time, constant in width and height for every mood, and use only single-cell glyphs (the error mouth changed from the double-width `︵` to `⌒` so layout stays aligned).
+- Idle redraws are driven by a frame key, so the terminal is only repainted when the visible frame actually changes, and nothing animates when Spark is off or hidden for lack of room.
+- Spark now needs 5 free rows (was 4) to appear in `auto`/`on` mode.
+
 ## 0.14.15
 
 Released: 2026-10-06.
