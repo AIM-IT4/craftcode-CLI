@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig,updateGlobalConfig,normalizeProviderConfig,providerLoginPatch} from './config.mjs';
+import {loadConfig,writeStarterConfig,GLOBAL_CONFIG,resolvePlanTokens,parseTokenAmount,updateProjectConfig,updateGlobalConfig,normalizeProviderConfig,providerLoginPatch,persistPermissionDecision} from './config.mjs';
 import {ProviderRegistry} from './providers/index.mjs';
 import {UsageTracker} from './usage.mjs';
 import {SkillRegistry} from './skills.mjs';
@@ -109,7 +109,7 @@ async function vercelBrowserLogin(cwd,tui){
 
 async function main(){
   const{yes,cwd,resume,resumeRef,showSplash,doctor,version,action,actionArg,actionProvider}=parseArgs();
-  if(version){console.log('Craft Code 0.14.10');return;}
+  if(version){console.log('Craft Code 0.14.11');return;}
   if(action==='eval'){
     if(actionArg!=='runtime')throw new Error('Only credential-free runtime evals are available: craftcode eval runtime');
     const r=await runRuntimeEvals();
@@ -122,7 +122,7 @@ async function main(){
   if(action==='update'){await runUpdate();return;}
   if(doctor){
     await writeStarterConfig();const dc=normalizeProviderConfig(await loadConfig(cwd)),dr=new ProviderRegistry(dc),pid=dr.activeId(),pc=dr.get(pid),credential=await resolveProviderApiKey(pid,pc);
-    console.log('Craft Code 0.14.10');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
+    console.log('Craft Code 0.14.11');console.log(`Entrypoint: ${new URL(import.meta.url).pathname}`);console.log(`Node: ${process.version}`);console.log(`CWD: ${process.cwd()}`);console.log(`Provider: ${pc.label} (${pid})`);console.log(`Provider auth: ${pc.auth===false?'not required':credential.key?'configured':'missing'} (${pc.auth===false?'none required':credential.source})`);return;
   }
   try{await fs.access(cwd);}catch{console.error(`Workspace not found: ${cwd}`);return;}
   await writeStarterConfig();
@@ -148,7 +148,7 @@ async function main(){
   let projectInstructions=await loadProjectInstructions(cwd,config);
 
   let mode=config.defaultMode||'build',effort=config.defaultEffort||'high',permissionPreset=permissionPresetOf(config.permissions),session,tui,stopping=false,processing=false,lastRunId='';
-  const askFn=async q=>{const m=String(q).match(/^([^:]+):\s*(.*)$/s);return tui.askApproval((m?.[1]||'action').toLowerCase(),m?.[2]||q);};
+  const askFn=async(q,options={})=>{const m=String(q).match(/^([^:]+):\s*(.*)$/s);return tui.askApproval((m?.[1]||'action').toLowerCase(),m?.[2]||q,options);};
   const agents=new AgentManager({client,model:pickSubagentModel(availableModels,model),cwd,config,usage,skills,plugins,mcp,projectInstructions,events:{onChange:x=>tui?.setAgents(x)}});
   const tools=new ToolRegistry({cwd,config,skills,plugins,mcp,agents,checkpoints,yes,onNotice:()=>{},onTodo:x=>tui?.setTodos(x),askFn,getModelClient:()=>({client,model})});
   const events={
@@ -186,7 +186,7 @@ async function main(){
   };
   const setPermissions=preset=>{const p=PERMISSION_PRESETS[preset]||PERMISSION_PRESETS.ask;permissionPreset=preset in PERMISSION_PRESETS?preset:'ask';config.permissions.write=p.write;config.permissions.shell=p.shell;config.permissions.mcp=p.mcp;tui?.setMeta({permissionPreset});tui?.setNotice(`Permissions · ${p.label}`,1400);};
   const cyclePermissions=()=>{const order=['ask','edit','auto','locked'],i=order.indexOf(permissionPreset);setPermissions(order[(i+1)%order.length]);};
-  const persistApproval=(kind,decision)=>{if(kind==='shell')config.permissions.shell=decision;if(kind==='write')config.permissions.write=decision;if(kind==='mcp')config.permissions.mcp=decision;permissionPreset=permissionPresetOf(config.permissions);tui?.setMeta({permissionPreset});};
+  const persistApproval=async(kind,decision)=>{await persistPermissionDecision(cwd,config,kind,decision);permissionPreset=permissionPresetOf(config.permissions);tui?.setMeta({permissionPreset});tui?.setNotice(`${kind.toUpperCase()} permission · ${decision==='allow'?'always allow':'always deny'}`,1800);};
   const resumeSession=async(ref='latest')=>{
     const s=await store.load(ref||'latest');if(!s){tui.add('notice','No matching saved session found.');return false;}
     const savedProvider=s.provider||'codecraft';if(savedProvider!==providerId)await setProvider(savedProvider);
