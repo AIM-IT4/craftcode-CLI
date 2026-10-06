@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.1
+
+Released: 2026-10-06.
+
+- Fixed inconsistent Escape behavior in the full-screen TUI.
+- Escape now dismisses the topmost transient layer first: modal/picker, permission dialog, plan approval, selection mode, slash-command/file suggestions, or tool-card focus.
+- When a model turn is running, Escape cancels the turn only after transient UI has been dismissed.
+- Slash-command and @file suggestion panels can now be hidden with Escape without deleting the user's typed input; editing the input reopens suggestions.
+- Selection mode now tracks its state correctly and Escape returns to Craft Code, restoring mouse capture when it had been enabled before selection mode.
+- Added regression coverage for command suggestions, file suggestions, pickers, approval dialogs, plan dialogs, and busy-turn cancellation precedence.
+
 ## 0.14.0
 
 Released: 2026-10-06.
