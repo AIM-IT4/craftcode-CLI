@@ -116,13 +116,25 @@ CodeCraft remains the default for legacy installations and existing configs/sess
 - Streaming responses with inline `Thinking…`, search, read, edit, test and review activity.
 - Native terminal drag-selection + `Ctrl+C` copying works by default. Mouse wheel, Up/Down and PageUp/PageDown scroll the transcript; prompt history uses `Ctrl+P` / `Ctrl+N`. In native-selection mode Craft Code uses terminal alternate-scroll translation, while `/mouse on` switches to direct SGR mouse-wheel events. Clickable mouse controls are optional via `/mouse on`; `/mouse off` restores native selection.
 - Inline red/green code edit previews directly under edit tool cards.
-- Interactive `/model`, `/mode`, `/effort`, `/permissions`, `/style` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
+- Interactive `/model`, `/mode`, `/effort`, `/permissions`, `/style`, `/plushie` and `/usage` controls, with a compact keyboard-first footer that never overlaps transcript output.
 - Live context-window pressure in the footer plus `/doctor` health checks; long sessions compact before overflow and recover once automatically from recognized provider context/message-sequence 400s.
 - Claude-inspired inline activity language (`✻ Thinking…`, `Tracing symbols…`, `Running tests…`, `Reviewing the diff…`) with `/style claude|classic|minimal`. Font family remains a terminal setting.
 - File attachment/autocomplete with `@path/to/file`.
 - Git checkpoints and `/undo`.
 - Shell shortcut syntax such as `!git status` through command policy and the normal permission layer.
 - Long-running dev servers and watchers use owned process handles instead of foreground command timeouts.
+
+### Spark plushie
+
+Craft Code includes **Spark**, an original terminal mascot rendered on the lower-right just above the composer.
+
+```text
+/plushie auto
+/plushie on
+/plushie off
+```
+
+In `auto` mode Spark appears only when the terminal has enough room and hides whenever command/file suggestions, pickers, or modals need the space. Spark animates while the agent is working and changes expression for success or tool errors.
 
 ### Persistent sessions
 
