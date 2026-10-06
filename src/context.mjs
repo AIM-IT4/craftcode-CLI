@@ -86,7 +86,7 @@ function extractPinnedEvidence(messages,maxChars=4600){
   return clip(rows.join('\n'),maxChars);
 }
 
-function compactCandidate(base,keepTurns){
+function compactCandidate(base,keepTurns,pinnedEvidence=''){
   const firstSystem=base[0]?.role==='system'?base[0]:null;
   const start=firstSystem?1:0,userIndexes=[];
   for(let i=start;i<base.length;i++)if(base[i]?.role==='user')userIndexes.push(i);
@@ -98,7 +98,7 @@ function compactCandidate(base,keepTurns){
     .filter(Boolean)
     .slice(-10)
     .join('\n');
-  const pinned=extractPinnedEvidence(base),parts=[];if(pinned)parts.push('Pinned evidence (preserve exactly in subsequent reasoning):\n'+pinned);if(older)parts.push('Salient older excerpts:\n'+older);
+  const pinned=pinnedEvidence||extractPinnedEvidence(base),parts=[];if(pinned)parts.push('Pinned evidence (preserve exactly in subsequent reasoning):\n'+pinned);if(older)parts.push('Salient older excerpts:\n'+older);
   const summary=parts.length?{role:'system',content:'Earlier conversation was locally compacted to preserve session continuity.\n'+parts.join('\n\n')}:null;
   return[...(firstSystem?[firstSystem]:[]),...(summary?[summary]:[]),...base.slice(cut)];
 }
@@ -118,8 +118,9 @@ export function compactConversation(messages,{targetChars=Infinity,aggressive=fa
   const target=Number.isFinite(targetChars)&&targetChars>0?targetChars:Infinity;
   if(jsonChars(current)<=target)return{messages:current,repaired:repaired.repaired,dropped:repaired.dropped,beforeChars:jsonChars(messages),afterChars:jsonChars(current)};
 
+  const pinnedEvidence=extractPinnedEvidence(current);
   for(const keepTurns of [4,3,2,1]){
-    const candidate=compactCandidate(current,keepTurns);
+    const candidate=compactCandidate(current,keepTurns,pinnedEvidence);
     if(jsonChars(candidate)<jsonChars(current))current=candidate;
     if(jsonChars(current)<=target)break;
   }
