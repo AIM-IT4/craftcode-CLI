@@ -6,7 +6,7 @@ Released: 2026-10-06.
 
 - Fixed Windows TUI row corruption where long Unicode/emoji output could physically wrap and overwrite the composer border.
 - Terminal layout now measures display cells instead of JavaScript string length, including emoji, CJK, combining marks and ANSI-colored text.
-- Added a small frame-width safety margin so rendered rows cannot auto-wrap into the next physical terminal line.
+- Retained the existing one-cell terminal-edge guard while making width calculation display-cell aware, preventing logical rows from wrapping into the next physical line.
 - Fixed `/connect vercel` failing with `spawn EINVAL` on Windows by launching `npx.cmd` through the Windows command shell.
 - Vercel authentication now uses the official OAuth device flow, mirrors the verification URL prominently, and best-effort opens that URL in the default browser.
 - Vercel connection failures now open a dismissible panel with an actionable retry message instead of only showing “not connected”.
